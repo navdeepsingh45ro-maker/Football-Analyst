@@ -501,6 +501,15 @@ dialog form, dialog .dialog-body { display: flex; flex-direction: column; max-he
 .diagram-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); padding: 12px; }
 .diagram-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); gap: 16px; }
 
+/* ── Looking a player up on the web (inside the player form) ── */
+.lookup { background: var(--chalk); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.lookup-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.lookup-row input { flex: 1 1 200px; min-width: 0; }
+.lookup-results { margin-top: 10px; }
+.lookup-results:empty { display: none; }
+.lookup-results .list > li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.photo-credit { margin: -6px 0 12px; }
+
 /* ── The observation filters: three in view, the rest one press away ── */
 .filters:not([data-more]) .field.extra { display: none; }
 

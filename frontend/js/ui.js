@@ -70,8 +70,10 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', danger
  */
 export function formDialog({ title, fields, values = {}, submitLabel = 'Save', onSubmit, intro = null, wide = false, extra = null }) {
   // `extra` adds a hand-built control above the fields: { element, read: () => moreValues }.
+  // It may also be a function that is given the form and returns that, for a control that fills the fields.
   return new Promise((resolve) => {
     const form = buildForm(fields, values);
+    if (typeof extra === 'function') extra = extra(form);
     let result = null;
     const submit = h('button', { type: 'submit', class: 'button primary' }, submitLabel);
     const dialog = h('dialog', { class: wide ? 'wide' : null },

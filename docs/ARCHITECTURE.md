@@ -180,6 +180,13 @@ route. One file per provider talks to it (`google_provider.py`,
 `anthropic_provider.py`). The grounding and reference-checking rules live
 outside them, in `services/ai_service.py`, and are tested with a stand-in.
 
+**The web lookup fills a form, never the database.** `services/lookup_service.py`
+asks Wikidata about a player and returns values for the player form plus notes on
+what it left empty. The page (`js/components/player-lookup.js`) puts them into
+empty boxes only. Saving is the form's ordinary save, through the same validation
+as typed values, so a looked-up player is stored exactly like any other. Vague or
+contradictory facts are left out rather than guessed.
+
 **The coach keeps two kinds of knowledge apart.** `ask_coach()` answers a free
 question from the Coach page (`js/pages/coach.js`). A statement about your
 players or matches must cite records that were really sent, and is flagged if

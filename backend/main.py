@@ -27,6 +27,7 @@ from routes.ai_routes import router as ai_router
 from routes.analytics_routes import router as analytics_router
 from routes.dashboard_routes import router as dashboard_router
 from routes.data_routes import router as data_router
+from routes.lookup_routes import router as lookup_router
 from routes.match_routes import router as match_router
 from routes.meta_routes import router as meta_router
 from routes.notebook_routes import router as notebook_router
@@ -118,6 +119,7 @@ app.include_router(dashboard_router)
 app.include_router(analytics_router)
 app.include_router(notebook_router)
 app.include_router(data_router)
+app.include_router(lookup_router)
 app.include_router(ai_router)
 
 

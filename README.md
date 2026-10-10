@@ -5,7 +5,8 @@ paused-video tactical analysis with drawing tools, a top-down tactical pitch,
 searchable observations, pattern reports across matches, and a coaching notebook.
 
 It runs entirely on your own computer. Your data is one folder. Nothing is sent
-anywhere unless you switch on the optional AI assistance.
+anywhere unless you ask for it: looking a player up on the web sends the name you
+typed to Wikidata, and the optional AI coach sends the records you ask it about.
 
 ## Start it
 
@@ -28,7 +29,9 @@ API. The first start creates `backend/data/` with an empty database.
 ## The workflow it is built around
 
 1. **Players** → add a player. Only the name is required; anything you leave
-   empty is stored as "not known", never as a guess or a zero.
+   empty is stored as "not known", never as a guess or a zero. To save typing,
+   **Fill in from the web** at the top of the form looks the player up and fills
+   in the empty boxes for you to check (see "Filling in a player from the web").
 2. **Matches** → add a match, then **Link a video**. A video file on this
    computer (`.mp4`, `.mov`, `.webm`) plays inside the app. Add the players to
    the lineup so they are one click away later.
@@ -99,6 +102,7 @@ Football_Analyst/
 | what a click or key press does in the editor | `frontend/js/editor/controller.js` |
 | a distance or angle calculation | `backend/services/geometry.py` **and** `frontend/js/editor/geometry.js`, plus the shared examples in `test_fixtures/` |
 | a report | `backend/services/analytics_service.py` |
+| what is read when a player is looked up on the web | `backend/services/lookup_service.py` |
 | colours, fonts, spacing | the tokens at the top of `frontend/css/app.css` |
 
 ## Ideas worth understanding first
@@ -175,6 +179,32 @@ Before any future database upgrade the app also saves its own
   If any row is wrong, nothing is saved and you get the line, the column and
   the reason. "Check the file" validates without saving.
 
+## Filling in a player from the web
+
+In the player form, type a name under **Fill in from the web** and press
+**Search the web**. Choose the right person from the list, and the form's empty
+boxes are filled with what was found: name, date of birth, nationality, height,
+preferred foot, position, club, national team, shirt number and a photo link.
+
+- The source is [Wikidata](https://www.wikidata.org), Wikipedia's database of
+  facts. It is free, open and needs no key. Sites that forbid copying, such as
+  Transfermarkt, are not used.
+- Nothing is saved until you press the form's own button. Check the details
+  first: web data can be wrong or out of date.
+- Only empty boxes are filled. What you typed is kept, and you are shown where
+  the web disagrees with it.
+- A fact is filled in only when Wikidata states it plainly. A date of birth
+  given only as a year, a position such as "forward", or two different heights
+  are left empty, and the form says why.
+- A line naming the source is added to the player's notes.
+- Only the name you type is sent, together with a line saying which program is
+  asking. Wikidata refuses programs that do not identify themselves, so that
+  line carries a contact link; set your own with `WEB_LOOKUP_CONTACT` in
+  `backend/.env` (see `backend/config.py`).
+
+Players who are not on Wikidata, which includes most amateur and youth players,
+are simply not found; type their details as before.
+
 ## Optional AI
 
 Off by default, and everything else works identically without it. Two providers
@@ -238,7 +268,9 @@ What it does and does not do:
 - No automatic tracking or computer vision. You place markers; measurements are
   estimates from where you placed them.
 - No downloading, converting or unlocking of video.
-- No data service. Every fact is one you entered or imported.
+- No paid data service, and no copying from sites that forbid it. A player's
+  details can be looked up on Wikidata when you ask; every other fact is one you
+  entered or imported.
 
 ## Known limits
 
@@ -246,5 +278,7 @@ What it does and does not do:
 - A highlighted space is a rectangle.
 - CSV import only adds records; it never updates existing ones.
 - The JSON export does not contain frame pictures (the backup does).
+- The web lookup reads Wikidata only, in English. It finds professional players;
+  where Wikidata is out of date, so is what it fills in.
 - The automated tests check the AI code against stand-ins. Google's Gemini has
   also been tried by hand with a real key; Anthropic's has not.

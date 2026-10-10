@@ -20,6 +20,15 @@ import {
 } from '../ui.js';
 
 const playerId = Number(queryParam('id'));
+/** A picture from Wikimedia Commons must say where it is from: its page there names the author and the licence. */
+function photoCredit(url) {
+  const prefix = 'https://commons.wikimedia.org/wiki/Special:FilePath/';
+  if (!url || !url.startsWith(prefix)) return null;
+  const file = url.slice(prefix.length).split('?')[0];
+  return h('p', { class: 'small muted photo-credit' }, 'Photo: ',
+    h('a', { href: `https://commons.wikimedia.org/wiki/File:${file}`, target: '_blank', rel: 'noopener noreferrer' }, 'Wikimedia Commons'));
+}
+
 const page = mountPage({ active: 'players.html', title: 'Player' });
 page.before.append(h('a', { class: 'back-link', href: 'players.html' }, 'All players'));
 page.heading.classList.add('row');
@@ -52,9 +61,10 @@ async function overviewTab(player) {
         referrerPolicy: 'no-referrer',  // the site hosting the picture is not told which page asked for it
         onerror: (event) => { event.target.hidden = true; },  // a dead link shows nothing rather than a broken image
       }) : null,
+      photoCredit(player.photo_url),
       h('dl', { class: 'facts' }, facts.map(([label, value]) => [h('dt', {}, label), h('dd', {}, orUnknown(value))])),
       player.notes ? [h('h3', { class: 'section' }, 'Notes'), h('p', { class: 'prose' }, player.notes)] : null,
-      h('p', { class: 'small muted section' }, 'A dash means not known. Nothing here is filled in by the app.')),
+      h('p', { class: 'small muted section' }, 'A dash means not known. Details come from the web only when you look a player up, and you check them first.')),
     h('section', {},
       h('div', { class: 'section-head' }, h('h2', {}, 'Latest assessment'),
         h('button', { type: 'button', class: 'button small quiet', onclick: () => tabset.show('assessments') }, 'All assessments')),

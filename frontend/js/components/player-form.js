@@ -2,6 +2,7 @@
 
 import { api, ApiError, vocabulary } from '../api.js';
 import { confirmDialog, formDialog } from '../ui.js';
+import { playerLookup } from './player-lookup.js';
 
 export async function playerFields() {
   const [vocab, teams] = await Promise.all([vocabulary(), api.get('/api/teams')]);
@@ -66,6 +67,8 @@ export async function playerDialog(player = null) {
     values: player ? playerToForm(player) : {},
     submitLabel: player ? 'Save changes' : 'Add player',
     intro: player ? 'This changes the biography only. Assessments and observations are kept as they are.' : null,
+    // Optional: look the player up on the web and fill the empty boxes (see player-lookup.js).
+    extra: (form) => playerLookup(form, { isNew: !player, name: player ? player.full_name : '' }),
     onSubmit: (values) => savePlayer(values, player ? player.id : null),
   });
 }

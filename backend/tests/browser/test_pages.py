@@ -309,3 +309,73 @@ def test_a_conversation_with_the_coach(page, live_app, populated):
     kept = [note for note in live_app.request("GET", "/api/notes") if note["note_type"] == "AI-generated draft"]
     assert len(kept) == 1 and kept[0]["player"]["id"] == striker["id"] and "AI-generated" in kept[0]["tags"]
     assert "(General coaching advice) A rondo trains scanning." in kept[0]["body"]
+
+
+def test_a_player_is_filled_in_from_the_web_for_you_to_check(page, live_app):
+    """The form's behaviour, with Wikidata's answers supplied by the test: nothing leaves this computer."""
+    live_app.request("POST", "/api/players", {"full_name": "Pat Stopper", "nationality": "Otherland",
+                                              "current_team": "Riverton United"})
+    found = {"query": "finisher", "source": "Wikidata", "results": [
+        {"id": "Q900001", "name": "Sam Finisher", "description": "Examplelandic footballer (born 2001)",
+         "url": "https://www.wikidata.org/wiki/Q900001"}]}
+    details = {
+        "id": "Q900001", "name": "Sam Finisher", "description": "Examplelandic footballer (born 2001)",
+        "fields": {"full_name": "Sam Finisher", "date_of_birth": "2001-04-12", "height_cm": 183, "preferred_foot": "left",
+                   "current_team": "Northside F.C.", "shirt_number": 9, "nationality": "Exampleland"},
+        "notes": ['Position: Wikidata says "winger", which does not name one exact position (it could be RW or LW). '
+                  "Choose it yourself."],
+        "source": {"name": "Wikidata", "url": "https://www.wikidata.org/wiki/Q900001",
+                   "wikipedia_url": "https://en.wikipedia.org/wiki/Sam_Finisher"},
+        "checked_on": "2026-10-10"}
+    page.route(re.compile(r"/api/lookup/players\?"), lambda route: route.fulfill(json=found))
+    page.route(re.compile(r"/api/lookup/players/Q900001$"), lambda route: route.fulfill(json=details))
+    saved_players = lambda: live_app.request("GET", "/api/players")  # noqa: E731
+
+    # ── A new player ─────────────────────────────────────────────────────────
+    page.goto(f"{live_app.url}/players.html")
+    page.get_by_role("button", name="Add player").first.click()
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_label("Primary position").fill("rw")  # typed by hand: must survive
+    search = dialog.get_by_label("Fill in from the web (optional)")
+    search.fill("finisher")
+    search.press("Enter")  # Enter searches; it must not save the half-empty form
+    expect(dialog.get_by_text("Examplelandic footballer (born 2001)")).to_be_visible()
+    assert len(saved_players()) == 1
+
+    dialog.get_by_role("button", name="Use the details of Sam Finisher").click()
+    expect(dialog.get_by_text("Filled in from Wikidata: name, date of birth, height, preferred foot, club, "
+                              "shirt number, nationality.")).to_be_visible()
+    expect(dialog.get_by_text("it could be RW or LW")).to_be_visible()  # what was left empty, and why
+    expect(dialog.get_by_label("Full name")).to_have_value("Sam Finisher")
+    expect(dialog.get_by_label("Date of birth")).to_have_value("2001-04-12")
+    expect(dialog.get_by_label("Height (cm)")).to_have_value("183")
+    expect(dialog.get_by_label("Preferred foot")).to_have_value("left")
+    expect(dialog.get_by_label("Primary position")).to_have_value("rw")
+    expect(dialog.get_by_label("Notes")).to_have_value(
+        "Details filled in from Wikidata (https://www.wikidata.org/wiki/Q900001) on 10 Oct 2026.")
+    expect(dialog.get_by_role("link", name="Wikipedia")).to_have_attribute("href", "https://en.wikipedia.org/wiki/Sam_Finisher")
+    assert len(saved_players()) == 1  # filling the form saves nothing
+
+    dialog.get_by_role("button", name="Add player").click()  # you checked it; now it is saved like anything typed
+    page.wait_for_url(re.compile(r"player\.html\?id=2"))
+    saved = live_app.request("GET", "/api/players/2")
+    assert (saved["full_name"], saved["date_of_birth"], saved["height_cm"], saved["preferred_foot"], saved["primary_position"],
+            saved["current_team"]["name"], saved["shirt_number"], saved["nationality"]) == (
+        "Sam Finisher", "2001-04-12", 183, "left", "RW", "Northside F.C.", 9, "Exampleland")
+    assert "Wikidata" in saved["notes"]
+
+    # ── An existing player: only the empty boxes are filled ──────────────────
+    page.goto(f"{live_app.url}/player.html?id=1")
+    page.get_by_role("button", name="Edit", exact=True).first.click()
+    dialog = page.get_by_role("dialog")
+    expect(dialog.get_by_label("Fill in from the web (optional)")).to_have_value("Pat Stopper")
+    dialog.get_by_role("button", name="Search the web").click()
+    dialog.get_by_role("button", name="Use the details of Sam Finisher").click()
+    expect(dialog.get_by_text('Kept what you had typed for: name (Wikidata says "Sam Finisher"); club (Wikidata says '
+                              '"Northside F.C."); nationality (Wikidata says "Exampleland").')).to_be_visible()
+    expect(dialog.get_by_label("Full name")).to_have_value("Pat Stopper")
+    expect(dialog.get_by_label("Current club")).to_have_value("Riverton United")
+    expect(dialog.get_by_label("Nationality")).to_have_value("Otherland")
+    expect(dialog.get_by_label("Height (cm)")).to_have_value("183")  # this one was empty
+    dialog.get_by_role("button", name="Cancel").click()
+    assert live_app.request("GET", "/api/players/1")["height_cm"] is None  # cancelled: nothing changed

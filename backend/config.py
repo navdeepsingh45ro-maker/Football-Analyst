@@ -52,6 +52,12 @@ AI_MODEL = (os.getenv("AI_MODEL") or "").strip()  # empty = that provider's defa
 # Only the anthropic provider uses this: low | medium | high | xhigh | max
 AI_EFFORT = (os.getenv("AI_EFFORT") or "medium").strip().lower()
 
+# ── Looking a player up on the web ───────────────────────────────────────────
+# Wikidata refuses requests from programs that do not say who runs them, so each
+# lookup carries this link (or e-mail address) in its User-Agent line. Put one of
+# your own in backend/.env with  WEB_LOOKUP_CONTACT=...  to change it.
+WEB_LOOKUP_CONTACT = (os.getenv("WEB_LOOKUP_CONTACT") or "https://github.com/navdeepsingh45ro-maker").strip()
+
 # Largest frame image accepted when saving a tactical snapshot (bytes, after decoding).
 MAX_FRAME_BYTES = 8 * 1024 * 1024
 

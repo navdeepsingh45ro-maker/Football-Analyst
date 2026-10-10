@@ -26,7 +26,7 @@ async function aboutSection() {
       h('dt', {}, 'Database'), h('dd', {}, `${plural(about.players, 'player')}, ${plural(about.observations, 'observation')}, ${plural(about.diagrams, 'diagram')}`),
       h('dt', {}, 'Frame pictures'), h('dd', {}, `${about.frame_pictures} saved in the media/frames folder`),
       h('dt', {}, 'Database version'), h('dd', {}, about.schema_revision)),
-    h('p', { class: 'small muted' }, 'Nothing is sent anywhere unless you switch on the optional AI assistance. Videos are never copied; only their location is stored.'));
+    h('p', { class: 'small muted' }, 'Nothing is sent anywhere unless you ask for it: looking a player up sends the name you typed to Wikidata, and the optional AI coach sends the records you ask it about. Videos are never copied; only their location is stored.'));
 }
 
 // ── Backups ──────────────────────────────────────────────────────────────────
