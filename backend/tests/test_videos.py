@@ -97,8 +97,8 @@ def test_web_videos_are_described_honestly(client):
     assert youtube["kind"] == "youtube"
     assert youtube["playback"]["mode"] == "embed"
     assert youtube["playback"]["source_url"] == "https://www.youtube-nocookie.com/embed/abcdefghijk"
-    assert youtube["playback"]["can_read_time"] is False
-    assert youtube["playback"]["can_capture_frames"] == "no"
+    assert youtube["playback"]["can_read_time"] is True  # through YouTube's own player messages
+    assert youtube["playback"]["can_capture_frames"] == "depends"  # only as a screenshot, pasted or shared by the browser
     assert client.get(f"/api/videos/{youtube['id']}/stream").status_code == 422
 
     direct = _add_video(client, match["id"], location="https://example.com/clips/goal.mp4").json()

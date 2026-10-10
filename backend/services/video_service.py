@@ -14,10 +14,11 @@ says so in plain words. The four kinds:
                    read pixels of a video from another site unless that site
                    explicitly permits it.
 
-    youtube        shown inside YouTube's own embedded player. The app cannot read
-                   its time or pixels, and YouTube's terms do not allow drawing
-                   over the player. Use the manual workspace (type the time, add
-                   a screenshot).
+    youtube        shown inside YouTube's own embedded player. The app can pause it and
+                   read its time through the player's own messages, but cannot read
+                   its pixels, and YouTube's terms do not allow drawing over it.
+                   The picture comes from a screenshot you paste, or a still the
+                   browser shares with your permission.
 
     external_link  any other web page. Just a link to open in a new tab.
 
@@ -116,10 +117,10 @@ def describe_playback(video: VideoReference) -> dict:
                          "the paused picture or add a screenshot.")
     if video.kind == "youtube":
         video_id = youtube_video_id(video.location)
-        return _playback("embed", f"https://www.youtube-nocookie.com/embed/{video_id}", True, False, "no",
-                         "Shown in YouTube's own player. The app cannot read its time or capture its frames, and "
-                         "may not draw over it. Pause, type the time shown on the player, and add a screenshot or "
-                         "use the tactical pitch.")
+        return _playback("embed", f"https://www.youtube-nocookie.com/embed/{video_id}", True, True, "depends",
+                         "Plays in YouTube's own player. Press Analyse this moment and the app pauses it and reads "
+                         "the time. A page may not copy the picture out of YouTube's player, so add it by pasting a "
+                         "screenshot, or turn on one-click pictures and let the browser share a still of this page.")
     return _playback("none", video.location, True, False, "no",
                      "This is only a link, not a video the app can play. Open it in a new tab, then use the manual "
                      "workspace: type the timestamp and add a screenshot.")

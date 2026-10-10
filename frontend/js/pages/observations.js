@@ -115,11 +115,14 @@ async function start() {
     const extra = fields.slice(MAIN_FILTERS, FILTER_COUNT);
     extra.forEach((field) => field.classList.add('extra'));
     const inUse = () => Object.keys(filtersFromForm()).filter((name) => EXTRA_FILTER_NAMES.includes(name)).length;
-    const more = h('button', { type: 'button', class: 'button', 'aria-expanded': 'false', onclick: () => showExtra(!form.element.hasAttribute('data-more')) });
+    const more = h('button', { type: 'button', class: 'button', 'aria-expanded': 'false', onclick: () => showExtra(!form.element.hasAttribute('data-more')) }, ' ');
     function showExtra(open) {
       form.element.toggleAttribute('data-more', open);
       more.setAttribute('aria-expanded', String(open));
-      more.textContent = open ? 'Fewer filters' : `More filters${inUse() ? ` (${inUse()} in use)` : ''}`;
+      // The wording is changed INSIDE the button's existing text, never by replacing it. Pressing this
+      // button right after typing in a filter first fires that filter's "change", which lands here; Safari
+      // drops the press altogether if the text under the pointer is swapped for a new one in between.
+      more.firstChild.nodeValue = open ? 'Fewer filters' : `More filters${inUse() ? ` (${inUse()} in use)` : ''}`;
     }
     fields[MAIN_FILTERS - 1].after(h('div', { class: 'field' }, more));
     showExtra(inUse() > 0);

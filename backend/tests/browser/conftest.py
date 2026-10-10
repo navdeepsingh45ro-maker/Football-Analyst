@@ -10,6 +10,10 @@ the rest of the suite still runs.
 
 To watch a test happen:      python -m pytest tests/browser -q --headed-browser
 To keep pictures of steps:   FOOTBALL_BROWSER_SHOTS=/some/folder python -m pytest tests/browser -q
+To use Safari's engine:      python -m playwright install webkit
+                             FOOTBALL_BROWSER=webkit python -m pytest tests/browser -q
+                             (the long file-video test checks positions and times more
+                             exactly than that engine clicks and pauses; see the README)
 """
 import os
 from pathlib import Path
@@ -28,10 +32,11 @@ sync_api = pytest.importorskip(
 def browser(request):
     with sync_api.sync_playwright() as playwright:
         try:
+            engine = os.environ.get("FOOTBALL_BROWSER", "chromium")  # chromium | webkit (Safari's engine) | firefox
             # Let a video start playing without a click, as a person at the keyboard could make it.
-            launched = playwright.chromium.launch(
+            launched = getattr(playwright, engine).launch(
                 headless=not request.config.getoption("--headed-browser"),
-                args=["--autoplay-policy=no-user-gesture-required"],
+                args=["--autoplay-policy=no-user-gesture-required"] if engine == "chromium" else [],
             )
         except Exception as error:  # the browser itself is missing
             pytest.skip(f"Playwright's browser is not installed (python -m playwright install chromium): {error}")

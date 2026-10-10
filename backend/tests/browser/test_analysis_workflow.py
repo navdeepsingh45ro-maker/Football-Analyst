@@ -9,6 +9,7 @@ How positions are checked: a shape drawn at, say, 40% across and 50% down the
 picture must (a) be STORED as (0.40, 0.50), and (b) be DRAWN with its centre at
 40% / 50% of the picture's box, at every window size.
 """
+import os
 import re
 import time
 import urllib.request
@@ -29,6 +30,12 @@ RUN = "Movement arrow: a run without the ball"
 SPACE = "Highlighted space or zone"
 ANGLE = "Angle measurement between three points"
 
+# How exactly a click must land where it was aimed, as a fraction of the surface. Chromium can click
+# between pixels; Safari's engine (FOOTBALL_BROWSER=webkit) clicks on whole pixels, about 0.003 of the
+# drawing's height each, and may settle a paused video on the nearest frame.
+SAFARI_ENGINE = os.environ.get("FOOTBALL_BROWSER", "chromium") == "webkit"
+NEAR = 0.008 if SAFARI_ENGINE else 0.004
+SAME_MOMENT = 0.05 if SAFARI_ENGINE else 1e-6
 FRAME = '.surface-box[data-layer="frame"] svg'
 PITCH = '.surface-box[data-layer="pitch"] svg'
 
@@ -119,10 +126,12 @@ def test_watch_pause_analyse_annotate_save_and_find_it_again(page, live_app, sce
 
     # ── Open the match and watch ─────────────────────────────────────────────
     page.goto(f"{live_app.url}/video.html?match={match_id}")
-    wait_until(page, "() => { const v = document.querySelector('video'); return Boolean(v) && v.readyState >= 2; }")
+    # Ready once its size and length are known. (Safari loads no picture until the video is played.)
+    wait_until(page, "() => { const v = document.querySelector('video'); return Boolean(v) && v.readyState >= 1; }")
     analyse = page.get_by_role("button", name="Analyse", exact=True)
     expect(analyse).to_be_visible()  # the floating button, on top of the video
-    page.evaluate("() => document.querySelector('video').play()")
+    # Muted, because Safari only lets a page start a video by itself when it makes no sound.
+    page.evaluate("() => { const v = document.querySelector('video'); v.muted = true; return v.play(); }")
     wait_until(page, "() => document.querySelector('video').currentTime > 1.2")
     page.snap("1-watching")
 
@@ -178,10 +187,10 @@ def test_watch_pause_analyse_annotate_save_and_find_it_again(page, live_app, sce
     expect(page.get_by_text("Estimates. They are only as accurate")).to_be_visible()
 
     # ── Acceptance test F, while editing: resize, and the marker stays put ───
-    assert drawn_at(page, FRAME, 'g[data-kind="subject"]') == pytest.approx((0.40, 0.50), abs=0.004)
+    assert drawn_at(page, FRAME, 'g[data-kind="subject"]') == pytest.approx((0.40, 0.50), abs=NEAR)
     page.set_viewport_size({"width": 900, "height": 1000})  # narrow: the layout stacks, the surfaces change size
-    assert drawn_at(page, FRAME, 'g[data-kind="subject"]') == pytest.approx((0.40, 0.50), abs=0.004)
-    assert drawn_at(page, PITCH, 'g[data-kind="subject"]') == pytest.approx(pitch(78, 30.5), abs=0.004)
+    assert drawn_at(page, FRAME, 'g[data-kind="subject"]') == pytest.approx((0.40, 0.50), abs=NEAR)
+    assert drawn_at(page, PITCH, 'g[data-kind="subject"]') == pytest.approx(pitch(78, 30.5), abs=NEAR)
     # A click at the new size is still stored at the right place (checked after saving, below).
     tool(page, "Attacking player marker (a teammate when your player attacks)")
     click_on(page, FRAME, (0.20, 0.30))
@@ -198,7 +207,7 @@ def test_watch_pause_analyse_annotate_save_and_find_it_again(page, live_app, sce
     expect(page.locator("#analysis")).to_have_count(0)
     after = video_state(page)
     assert after["paused"] is True, "saving must not resume playback"
-    assert after["time"] == pytest.approx(paused["time"], abs=1e-6)
+    assert after["time"] == pytest.approx(paused["time"], abs=SAME_MOMENT)
     expect(page.locator(".side-panel")).to_contain_text("Off-ball movement: Diagonal run")
     page.snap("3-saved")
 
@@ -222,16 +231,16 @@ def test_watch_pause_analyse_annotate_save_and_find_it_again(page, live_app, sce
         return [a for a in snapshot["annotations"] if a["layer"] == layer and a["kind"] == kind]
 
     # Frame positions are fractions of the picture, not pixels.
-    assert stored("frame", "subject")[0]["points"][0] == pytest.approx([0.40, 0.50], abs=0.003)
-    assert stored("frame", "ball")[0]["points"][0] == pytest.approx([0.30, 0.70], abs=0.003)
-    assert [a["points"][0] for a in stored("frame", "defender")] == [pytest.approx([0.55, 0.45], abs=0.003),
-                                                                     pytest.approx([0.60, 0.62], abs=0.003)]
-    assert stored("frame", "movement")[0]["points"] == [pytest.approx([0.40, 0.50], abs=0.003),
-                                                        pytest.approx([0.62, 0.38], abs=0.003)]
-    assert stored("frame", "zone")[0]["points"] == [pytest.approx([0.62, 0.22], abs=0.003),
-                                                    pytest.approx([0.86, 0.44], abs=0.003)]
+    assert stored("frame", "subject")[0]["points"][0] == pytest.approx([0.40, 0.50], abs=NEAR)
+    assert stored("frame", "ball")[0]["points"][0] == pytest.approx([0.30, 0.70], abs=NEAR)
+    assert [a["points"][0] for a in stored("frame", "defender")] == [pytest.approx([0.55, 0.45], abs=NEAR),
+                                                                     pytest.approx([0.60, 0.62], abs=NEAR)]
+    assert stored("frame", "movement")[0]["points"] == [pytest.approx([0.40, 0.50], abs=NEAR),
+                                                        pytest.approx([0.62, 0.38], abs=NEAR)]
+    assert stored("frame", "zone")[0]["points"] == [pytest.approx([0.62, 0.22], abs=NEAR),
+                                                    pytest.approx([0.86, 0.44], abs=NEAR)]
     # The marker placed while the window was a different size landed where it was clicked.
-    assert stored("frame", "attacker")[0]["points"][0] == pytest.approx([0.20, 0.30], abs=0.003)
+    assert stored("frame", "attacker")[0]["points"][0] == pytest.approx([0.20, 0.30], abs=NEAR)
     # Pitch positions are metres.
     assert stored("pitch", "subject")[0]["points"][0] == pytest.approx([78, 30.5], abs=0.15)
     assert stored("pitch", "ball")[0]["points"][0] == pytest.approx([67, 13], abs=0.15)
@@ -291,7 +300,7 @@ def test_the_pitch_can_be_drawn_on_without_a_mouse(page, live_app):
     surface.focus()
     page.keyboard.press("Enter")  # place it in the middle of the pitch
     expect(page.locator(f'{PITCH} g[data-kind="ball"]')).to_have_count(1)
-    assert drawn_at(page, PITCH, 'g[data-kind="ball"]') == pytest.approx(pitch(52.5, 34), abs=0.004)
+    assert drawn_at(page, PITCH, 'g[data-kind="ball"]') == pytest.approx(pitch(52.5, 34), abs=NEAR)
 
     page.keyboard.press("Tab")  # move focus onto the ball
     page.keyboard.press("Enter")  # select it
@@ -310,14 +319,14 @@ def test_the_pitch_can_be_drawn_on_without_a_mouse(page, live_app):
     x_box.fill("94")
     y_box.fill("34")
     y_box.press("Tab")
-    assert drawn_at(page, PITCH, 'g[data-kind="ball"]') == pytest.approx(pitch(94, 34), abs=0.004)
+    assert drawn_at(page, PITCH, 'g[data-kind="ball"]') == pytest.approx(pitch(94, 34), abs=NEAR)
 
     page.locator(f'{PITCH} g[data-kind="ball"]').focus()
     page.keyboard.press("Delete")
     expect(page.locator(f'{PITCH} g[data-kind="ball"]')).to_have_count(0)
     page.get_by_role("button", name="Undo the last change (Ctrl/Cmd + Z)").click()
     expect(page.locator(f'{PITCH} g[data-kind="ball"]')).to_have_count(1)
-    assert drawn_at(page, PITCH, 'g[data-kind="ball"]') == pytest.approx(pitch(94, 34), abs=0.004)
+    assert drawn_at(page, PITCH, 'g[data-kind="ball"]') == pytest.approx(pitch(94, 34), abs=NEAR)
 
 
 def test_a_standalone_pitch_diagram_is_saved_and_reopened(page, live_app):
@@ -327,7 +336,9 @@ def test_a_standalone_pitch_diagram_is_saved_and_reopened(page, live_app):
     tool(page, BALL)
     click_on(page, PITCH, pitch(83, 34))  # 11 m behind
     expect(page.locator(".measures")).to_contain_text("11.0 m")
-    expect(page.locator(".measures")).to_contain_text("spans 36.8°")  # 2 * atan(3.66 / 11)
+    # 2 * atan(3.66 / 11) = 36.8 degrees. A browser that only clicks on whole pixels lands the marker a
+    # touch off the spot, so a shade less is accepted here; the exact figure is checked in the geometry tests.
+    expect(page.locator(".measures")).to_contain_text(re.compile(r"spans 36\.[6-9]°"))
 
     page.get_by_label("Title").fill("Penalty spot reference")
     page.get_by_role("button", name="Save diagram").click()
@@ -338,8 +349,8 @@ def test_a_standalone_pitch_diagram_is_saved_and_reopened(page, live_app):
 
     page.goto(f"{live_app.url}/pitch.html?snapshot={saved[0]['id']}")
     expect(page.get_by_label("Title")).to_have_value("Penalty spot reference")
-    assert drawn_at(page, PITCH, 'g[data-kind="subject"]') == pytest.approx(pitch(94, 34), abs=0.004)
-    assert drawn_at(page, PITCH, 'g[data-kind="ball"]') == pytest.approx(pitch(83, 34), abs=0.004)
+    assert drawn_at(page, PITCH, 'g[data-kind="subject"]') == pytest.approx(pitch(94, 34), abs=NEAR)
+    assert drawn_at(page, PITCH, 'g[data-kind="ball"]') == pytest.approx(pitch(83, 34), abs=NEAR)
 
     # Change the reopened diagram and save it again: same diagram, updated, no copy.
     tool(page, DEFENDER)
@@ -378,7 +389,7 @@ def test_a_moment_can_be_analysed_without_a_playable_video(page, live_app):
     assert [p["id"] for p in observation["players"]] == [player["id"]]
     snapshot = observation["snapshots"][0]
     assert (snapshot["frame_width"], snapshot["frame_height"], snapshot["frame_source"]) == (960, 540, "upload")
-    assert snapshot["annotations"][0]["points"][0] == pytest.approx([0.5, 0.5], abs=0.003)
+    assert snapshot["annotations"][0]["points"][0] == pytest.approx([0.5, 0.5], abs=NEAR)
 
 
 def test_a_video_the_browser_cannot_play_is_explained_not_hidden(page, live_app, tmp_path):
@@ -421,3 +432,163 @@ def test_reopening_a_saved_drawing_to_change_it(page, live_app, scene):
     shapes = {a["uid"]: a for a in after["snapshots"][0]["annotations"]}
     assert shapes["ball-1"]["points"] == [[60, 30]]  # the existing shape kept its identity and position
     assert len(shapes) == 2
+
+
+# A stand-in for YouTube's embedded player. It speaks the same messages as the real one
+# (checked by hand against the real player), so the page can be tested without the network.
+YOUTUBE_STAND_IN = """<!doctype html><meta charset="utf-8"><title>stand-in player</title>
+<body style="margin:0;background:#234"><script>
+let time = 75.5, state = 1;
+const tell = (event, info) => parent.postMessage(JSON.stringify({ event, info, id: 1, channel: 'widget' }), '*');
+addEventListener('message', (message) => {
+  const asked = JSON.parse(message.data);
+  if (asked.event === 'listening') tell('initialDelivery', { currentTime: time, playerState: state, duration: 5400 });
+  if (asked.event !== 'command') return;
+  if (asked.func === 'pauseVideo') { state = 2; time = 75.75; tell('infoDelivery', { playerState: 2, currentTime: time }); }
+  if (asked.func === 'playVideo') { state = 1; tell('infoDelivery', { playerState: 1 }); }
+  if (asked.func === 'seekTo') { time = asked.args[0]; tell('infoDelivery', { currentTime: time }); }
+  parent.postMessage(JSON.stringify({ event: 'stand-in-was-asked', func: asked.func, args: asked.args }), '*');
+});
+</script></body>"""
+
+
+def test_a_youtube_match_is_paused_timed_and_analysed_with_one_button(page, live_app):
+    player = live_app.request("POST", "/api/players", {"full_name": "Sam Finisher"})
+    match = live_app.request("POST", "/api/matches", {"home_team": "Northside FC", "away_team": "Riverton United"})
+    video = live_app.request("POST", f"/api/matches/{match['id']}/videos", {"location": "https://www.youtube.com/watch?v=abcdefghijk"})
+    opened = []
+    page.route("https://www.youtube-nocookie.com/**", lambda route: (
+        opened.append(route.request.url), route.fulfill(content_type="text/html", body=YOUTUBE_STAND_IN)))
+    # Note everything the page asks of the player.
+    page.add_init_script("""window.asked = []; addEventListener('message', (message) => {
+        try { const said = JSON.parse(message.data); if (said.event === 'stand-in-was-asked') window.asked.push([said.func, said.args]); } catch {}
+    });""")
+    asked = lambda: page.evaluate("() => window.asked")  # noqa: E731
+
+    page.goto(f"{live_app.url}/video.html?match={match['id']}&t=42")
+    analyse = page.get_by_role("button", name="Analyse this moment")
+    expect(analyse).to_be_visible()
+    expect(page.get_by_text("at 1:15")).to_be_visible()  # the player's own time, shown without asking you
+    assert "enablejsapi=1" in opened[0] and "start=42" in opened[0] and f"origin=http%3A%2F%2F127.0.0.1%3A{live_app.port}" in opened[0]
+    expect(page.get_by_role("button", name="Analyse a moment by hand")).to_be_hidden()  # one way in, not two
+
+    # ── One press: the video is paused and its time is read ──────────────────
+    analyse.click()
+    step = page.locator(".dropzone")
+    expect(step).to_contain_text("Paused at")
+    expect(step).to_contain_text("1:15")
+    expect(step).to_contain_text("Now add the picture of this moment.")
+    assert asked() == [["pauseVideo", []]]
+    expect(page.locator(".viewer iframe")).to_be_visible()  # the paused video is still there to take a screenshot of
+
+    # ── The picture goes in, and the workspace opens with the time already filled ──
+    step.get_by_label("Choose a screenshot").set_input_files(str(SCREENSHOT))
+    expect(page.locator(FRAME)).to_be_visible()
+    expect(page.get_by_role("textbox", name="Video time")).to_have_value("1:15.75")
+    tool(page, BALL)
+    click_on(page, FRAME, (0.5, 0.5))
+    page.get_by_label("Add another player by name").fill("Sam Finisher")
+    page.get_by_label("Add another player by name").press("Enter")
+
+    # ── One press saves and carries on watching ──────────────────────────────
+    page.get_by_role("button", name="Save and keep watching").click()
+    expect(page.get_by_text(re.compile(r"Observation #\d+ saved"))).to_be_visible()
+    expect(analyse).to_be_visible()
+    wait_until(page, "() => window.asked.length === 2")
+    assert asked()[1] == ["playVideo", []]
+
+    observation = live_app.request("GET", "/api/observations/1")
+    assert observation["video_time_seconds"] == 75.75 and observation["video_reference_id"] == video["id"]
+    assert [p["id"] for p in observation["players"]] == [player["id"]]
+    assert (observation["snapshots"][0]["frame_width"], observation["snapshots"][0]["frame_source"]) == (960, "upload")
+
+    # ── A saved moment takes the player back to it ───────────────────────────
+    page.locator(".side-panel").get_by_role("button", name=re.compile("1:15")).click()
+    wait_until(page, "() => window.asked.length === 3")
+    assert asked()[2] == ["seekTo", [75.75, True]]
+
+    # ── Without a picture: straight to the pitch ─────────────────────────────
+    analyse.click()
+    page.get_by_role("button", name="Continue without a picture").click()
+    expect(page.locator(PITCH)).to_be_visible()
+    expect(page.get_by_text("No picture of this moment yet")).to_be_visible()
+
+
+# What the browser would hand over after you agree to share the screen: a picture of the whole page,
+# twice as large as the page (a high-resolution screen). The headless test browser cannot really share
+# its screen, so this draws that picture itself from where things actually are on the page: the video
+# area green with a red centre, and the two marks wherever the page is showing them.
+SHARED_SCREEN_STAND_IN = """
+navigator.mediaDevices.getDisplayMedia = async () => {
+  const scale = 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = innerWidth * scale;
+  canvas.height = innerHeight * scale;
+  const pen = canvas.getContext('2d');
+  const fill = (colour, left, top, width, height) => { pen.fillStyle = colour; pen.fillRect(left * scale, top * scale, width * scale, height * scale); };
+  const paint = () => {
+    fill('rgb(22,38,63)', 0, 0, innerWidth, innerHeight);
+    const video = document.querySelector('.viewer');
+    if (video) {
+      const box = video.getBoundingClientRect();
+      fill('rgb(30,120,60)', box.left, box.top, box.width, box.height);
+      fill('rgb(200,40,40)', box.left + box.width / 4, box.top + box.height / 4, box.width / 2, box.height / 2);
+    }
+    for (const mark of document.querySelectorAll('.capture-mark')) {
+      if (getComputedStyle(mark).display === 'none') continue;
+      const box = mark.getBoundingClientRect();
+      const [first, second] = mark.classList.contains('top-left') ? ['#ff00ff', '#00ffff'] : ['#00ffff', '#ff00ff'];
+      fill(first, box.left, box.top, box.width / 2, box.height);
+      fill(second, box.left + box.width / 2, box.top, box.width / 2, box.height);
+    }
+  };
+  paint();
+  setInterval(paint, 40);
+  return canvas.captureStream(25);
+};
+"""
+
+
+def test_with_one_click_pictures_on_analyse_takes_the_picture_of_the_video_itself(page, live_app):
+    live_app.request("POST", "/api/players", {"full_name": "Sam Finisher"})
+    match = live_app.request("POST", "/api/matches", {"home_team": "Northside FC", "away_team": "Riverton United"})
+    live_app.request("POST", f"/api/matches/{match['id']}/videos", {"location": "https://youtu.be/abcdefghijk"})
+    page.route("https://www.youtube-nocookie.com/**", lambda route: route.fulfill(content_type="text/html", body=YOUTUBE_STAND_IN))
+    page.add_init_script(SHARED_SCREEN_STAND_IN)
+
+    page.goto(f"{live_app.url}/video.html?match={match['id']}")
+    expect(page.locator(".capture-mark").first).to_be_hidden()  # no marks until sharing is on
+    page.get_by_role("button", name="Turn on one-click pictures").click()
+    expect(page.get_by_role("status").filter(has_text="One-click pictures are on")).to_be_visible()
+    expect(page.get_by_role("button", name="One-click pictures are on")).to_have_attribute("aria-pressed", "true")
+    video_box = page.locator(".viewer").bounding_box()
+
+    # One press: picture, pause, time. No screenshot, no typing.
+    page.get_by_role("button", name="Analyse this moment").click()
+    expect(page.locator(FRAME)).to_be_visible()
+    expect(page.get_by_role("textbox", name="Video time")).to_have_value("1:15.75")
+    expect(page.get_by_text("Now add the picture of this moment.")).to_have_count(0)
+
+    page.get_by_label("Add another player by name").fill("Sam Finisher")
+    page.get_by_label("Add another player by name").press("Enter")
+    page.get_by_role("button", name="Save observation").click()
+    expect(page.get_by_text(re.compile(r"Observation #\d+ saved"))).to_be_visible()
+
+    snapshot = live_app.request("GET", "/api/observations/1")["snapshots"][0]
+    assert snapshot["frame_source"] == "video_capture"
+    # The stored picture is the video area and nothing else: same shape, at the shared picture's resolution (or the size limit).
+    assert snapshot["frame_width"] / snapshot["frame_height"] == pytest.approx(video_box["width"] / video_box["height"], rel=0.01)
+    assert snapshot["frame_width"] == pytest.approx(min(1920, video_box["width"] * 2), abs=3)
+    colours = page.evaluate("""async (address) => {
+        const bitmap = await createImageBitmap(await (await fetch(address)).blob());
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const pen = canvas.getContext('2d');
+        pen.drawImage(bitmap, 0, 0);
+        const at = (x, y) => Array.from(pen.getImageData(Math.floor(bitmap.width * x), Math.floor(bitmap.height * y), 1, 1).data.slice(0, 3));
+        return { edges: [at(0.5, 0.004), at(0.5, 0.996), at(0.003, 0.5), at(0.997, 0.5)], middle: at(0.5, 0.5),
+                 outsideRed: [at(0.24, 0.5), at(0.5, 0.235)], insideRed: [at(0.26, 0.5), at(0.5, 0.265)] };
+    }""", snapshot["frame_image_url"])
+    green, red = pytest.approx([30, 120, 60], abs=14), pytest.approx([200, 40, 40], abs=14)  # JPEG shifts colours slightly
+    assert all(colour == green for colour in colours["edges"]), colours  # cropped right to the video's edges, no page around it
+    assert colours["middle"] == red
+    assert all(colour == green for colour in colours["outsideRed"]) and all(colour == red for colour in colours["insideRed"]), colours

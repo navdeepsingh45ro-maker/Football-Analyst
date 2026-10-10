@@ -14,7 +14,10 @@
 // WHAT "ANALYSE" CAN AND CANNOT DO, BY KIND OF VIDEO (see backend/services/video_service.py)
 //   a video file on this computer   pause, read the time, capture the frame: all automatic
 //   a video file on the web         pause and read the time; the frame only if that website allows it
-//   YouTube / any other link        nothing automatic. You type the time and add a screenshot.
+//   YouTube                         pause and read the time, through YouTube's own messages (youtube-player.js).
+//                                   The picture: paste a screenshot, or switch on "one-click pictures", where the
+//                                   browser shares a still of this page with your permission (editor/screen-capture.js)
+//   any other link                  nothing automatic. You type the time and add a screenshot.
 
 import { api, ApiError, vocabulary } from '../api.js';
 import { observationFields, observationToForm } from '../components/observation-form.js';
@@ -22,11 +25,13 @@ import { observationTitle, openObservation } from '../components/observation-lis
 import { playerPicker } from '../components/player-picker.js';
 import { clear, h, queryParam } from '../dom.js';
 import { FrameCaptureError, captureVideoFrame, frameFromImageFile, imageFromTransfer } from '../editor/frame-capture.js';
+import { ScreenGrabber, screenCaptureSupported } from '../editor/screen-capture.js';
 import { createWorkspace } from '../editor/workspace.js';
 import { buildForm } from '../forms.js';
 import { formatClock, formatDate } from '../format.js';
 import { errorNote, load, mountPage } from '../layout.js';
 import { confirmDialog, emptyState, matchDate, scoreline, toast, videoClock } from '../ui.js';
+import { youtubePlayer } from '../youtube-player.js';
 
 const PITCH = { length: 105, width: 68 };
 
@@ -68,9 +73,10 @@ function showChooser() {
  * @param options.frameNote why there is no picture (e.g. capture was blocked), shown to the user
  * @param options.time      the captured video position in seconds, or null to type it
  * @param options.existing  an observation being edited (with `snapshot`, its diagram, or null)
- * @param options.onDone    called with the saved observation, or null when cancelled
+ * @param options.onDone    called with the saved observation (or null when cancelled) and { resume }
+ * @param options.canResume there is a video behind this that can be started again, so offer "Save and keep watching"
  */
-function buildAnalysis({ vocab, allPlayers, suggested, match, videoId, time, frame, frameNote, existing, snapshot, onDone }) {
+function buildAnalysis({ vocab, allPlayers, suggested, match, videoId, time, frame, frameNote, existing, snapshot, onDone, canResume = false }) {
   let workspace = null;
   let currentFrame = frame;
   const surfaceHost = h('div', {});
@@ -176,17 +182,20 @@ function buildAnalysis({ vocab, allPlayers, suggested, match, videoId, time, fra
   };
   document.addEventListener('paste', onPaste);
 
-  function close(result) {
+  function close(result, options = {}) {
     document.removeEventListener('paste', onPaste);
     if (workspace) workspace.destroy();
     unsavedDrawing = false;
-    onDone(result);
+    onDone(result, options);
   }
 
-  const saveButton = h('button', { type: 'button', class: 'button primary', onclick: save },
+  const saveButton = h('button', { type: 'button', class: 'button primary', onclick: () => save() },
     existing ? 'Save changes' : 'Save observation');
+  // One press instead of two: saves, returns to the video and starts it playing again.
+  const saveAndPlay = canResume
+    ? h('button', { type: 'button', class: 'button', onclick: () => save({ resume: true }) }, 'Save and keep watching') : null;
 
-  async function save() {
+  async function save({ resume = false } = {}) {
     const { values, errors } = form.read();
     if (Object.keys(errors).length) {
       form.showErrors(errors);
@@ -216,6 +225,7 @@ function buildAnalysis({ vocab, allPlayers, suggested, match, videoId, time, fra
     const hasDiagram = shapes.length > 0 || Boolean(currentFrame);
 
     saveButton.disabled = true;
+    if (saveAndPlay) saveAndPlay.disabled = true;
     try {
       let saved;
       if (!existing) {
@@ -232,14 +242,15 @@ function buildAnalysis({ vocab, allPlayers, suggested, match, videoId, time, fra
         if (snapshot) await api.put(`/api/snapshots/${snapshot.id}`, { ...diagram, notes: snapshot.notes });
         else if (hasDiagram) await api.post(`/api/observations/${existing.id}/snapshots`, diagram);
       }
-      toast(existing ? `Observation #${saved.id} saved` : `Observation #${saved.id} saved. Press play to carry on.`);
-      close(saved);
+      toast(existing || resume ? `Observation #${saved.id} saved` : `Observation #${saved.id} saved. Press play to carry on.`);
+      close(saved, { resume });
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
       const fieldErrors = error.fieldErrors;
       form.showErrors(Object.keys(fieldErrors).length ? fieldErrors : { '': error.message });
     } finally {
       saveButton.disabled = false;
+      if (saveAndPlay) saveAndPlay.disabled = false;
     }
   }
 
@@ -267,7 +278,7 @@ function buildAnalysis({ vocab, allPlayers, suggested, match, videoId, time, fra
         h('div', { class: 'panel stack' },
           h('h3', {}, 'What you saw'),
           picker.element, form.element,
-          h('div', { class: 'row' }, saveButton, h('button', { type: 'button', class: 'button', onclick: cancel }, 'Cancel'))))));
+          h('div', { class: 'row' }, saveButton, saveAndPlay, h('button', { type: 'button', class: 'button', onclick: cancel }, 'Cancel'))))));
 }
 
 // ── Watching a match ─────────────────────────────────────────────────────────
@@ -303,14 +314,19 @@ async function showMatch(matchId, wantedVideoId, seekTo) {
   const analysisHost = h('div', {});
   const momentsBox = h('div', {});
   let player = null;  // the <video> element, when the app plays the video itself
+  let tube = null;  // the link to YouTube's player, when the video is shown in it
+  const jumpTo = (seconds) => {
+    if (player) player.currentTime = seconds;
+    else if (tube) tube.seek(seconds);
+  };
 
   function refreshMoments() {
     return load(momentsBox, async () => {
       const result = await api.get('/api/observations', { match_id: match.id, limit: 500 });
       if (!result.items.length) return h('p', { class: 'muted small' }, 'Nothing recorded for this match yet.');
       return h('ul', { class: 'list' }, result.items.map((observation) => h('li', { class: 'moment' },
-        h('div', { class: 'clocks' }, videoClock(observation.video_time_seconds, player && observation.video_time_seconds !== null
-          ? { onclick: () => { player.currentTime = observation.video_time_seconds; } } : {})),
+        h('div', { class: 'clocks' }, videoClock(observation.video_time_seconds, (player || tube) && observation.video_time_seconds !== null
+          ? { onclick: () => jumpTo(observation.video_time_seconds) } : {})),
         h('div', { class: 'what' },
           h('a', { href: `observations.html?open=${observation.id}`,
             onclick: (event) => { event.preventDefault(); openObservation(observation.id, { onChanged: refreshMoments }); } },
@@ -323,12 +339,17 @@ async function showMatch(matchId, wantedVideoId, seekTo) {
     watchStage.hidden = true;  // hidden, not removed: the video stays paused exactly where it was
     clear(analysisHost).append(buildAnalysis({
       vocab, allPlayers, suggested: lineup, match, videoId: video ? video.id : null, time, frame, frameNote,
-      existing: null, snapshot: null,
-      onDone: (saved) => {
+      existing: null, snapshot: null, canResume: Boolean(player || tube),
+      onDone: (saved, { resume = false } = {}) => {
         clear(analysisHost);
         watchStage.hidden = false;
         if (saved) refreshMoments();
-        if (player) player.focus();
+        if (player) {
+          player.focus();
+          if (resume) player.play();
+        } else if (tube && resume) {
+          tube.play();
+        }
       },
     }));
     analysisHost.scrollIntoView({ block: 'start' });
@@ -352,6 +373,160 @@ async function showMatch(matchId, wantedVideoId, seekTo) {
 
   const manualButton = h('button', { type: 'button', class: 'button', onclick: () => startAnalysis({ time: null, frame: null, frameNote: null }) },
     'Analyse a moment by hand');
+  const analyseKeyPressed = (event) => {
+    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    return event.key.toLowerCase() === 'a' && !typing && !watchStage.hidden && !event.metaKey && !event.ctrlKey
+      && !document.querySelector('dialog[open]');
+  };
+
+  /**
+   * A YouTube video. The app pauses it and reads its time through YouTube's own
+   * messages. The picture has to come from you: a pasted screenshot, or, with
+   * "one-click pictures" on, a still the browser shares with your permission.
+   */
+  function youTubeViewer() {
+    const address = new URL(video.playback.source_url);
+    address.searchParams.set('enablejsapi', '1');  // lets the player answer "pause" and report its time
+    address.searchParams.set('origin', window.location.origin);
+    address.searchParams.set('rel', '0');
+    address.searchParams.set('playsinline', '1');
+    if (seekTo !== null && Number.isFinite(seekTo)) address.searchParams.set('start', String(Math.floor(seekTo)));
+    const frame = h('iframe', { src: address.href, title: video.label, allowFullscreen: true, referrerPolicy: 'strict-origin-when-cross-origin',
+      allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture' });
+    tube = youtubePlayer(frame);
+
+    // The two small marks beside the video's corners let a shared picture of the screen be cropped to the video.
+    const marked = h('div', { class: 'capture-frame' }, h('div', { class: 'viewer' }, frame),
+      h('span', { class: 'capture-mark top-left', 'aria-hidden': 'true' }),
+      h('span', { class: 'capture-mark bottom-right', 'aria-hidden': 'true' }));
+    const grabber = screenCaptureSupported() ? new ScreenGrabber(marked) : null;
+
+    const clock = h('span', { class: 'tube-clock numeric' });
+    tube.onChange(() => { clock.textContent = tube.time === null ? '' : `at ${formatClock(tube.time)}`; });
+    const analyse = h('button', { type: 'button', class: 'button primary', onclick: () => analyseTube(),
+      title: 'Pause here and analyse this moment (keyboard: A)' }, 'Analyse this moment');
+    const oneClick = grabber ? h('button', { type: 'button', class: 'button', 'aria-pressed': 'false', onclick: () => toggleOneClick() },
+      'Turn on one-click pictures') : null;
+    const bar = h('div', { class: 'tube-bar' }, analyse, clock, h('span', { class: 'grow' }), oneClick);
+    const notice = h('p', { class: 'small', role: 'status' });
+    notice.hidden = true;
+    const say = (text) => {
+      notice.textContent = text;
+      notice.hidden = !text;
+    };
+    const pictureStep = h('div', { class: 'dropzone stack' });
+    pictureStep.hidden = true;
+    let useFile = null;  // set while the app is waiting for the picture of a paused moment
+
+    function syncOneClick() {
+      oneClick.textContent = grabber.active ? 'One-click pictures are on' : 'Turn on one-click pictures';
+      oneClick.setAttribute('aria-pressed', String(grabber.active));
+    }
+    if (grabber) grabber.onStop = syncOneClick;
+
+    async function toggleOneClick() {
+      if (grabber.active) {
+        grabber.stop();
+        say('');
+        return;
+      }
+      oneClick.disabled = true;
+      try {
+        await grabber.start();  // the browser asks what to share
+        await grabber.grab();  // a trial run: can the video be found in what was shared?
+        say('One-click pictures are on: Analyse now takes the picture for you. To switch it off, press the button again or stop sharing in the browser.');
+      } catch (error) {
+        grabber.stop();
+        say(error.message);
+      } finally {
+        oneClick.disabled = false;
+        syncOneClick();
+      }
+    }
+
+    /** The moment is paused and timed; now it needs its picture. Waits for a paste, a drop or a chosen file. */
+    function askForPicture(time) {
+      const finish = () => {
+        pictureStep.hidden = true;
+        bar.hidden = false;
+        useFile = null;
+        document.removeEventListener('paste', onPaste);
+      };
+      const open = (picture) => {
+        finish();
+        startAnalysis({ time, frame: picture, frameNote: null });
+      };
+      useFile = async (file) => {
+        try {
+          open({ ...await frameFromImageFile(file), source: 'upload' });
+        } catch (error) {
+          toast(error.message, 'error');
+        }
+      };
+      function onPaste(event) {
+        const file = imageFromTransfer(event.clipboardData);
+        if (file) {
+          event.preventDefault();
+          useFile(file);
+        }
+      }
+      const input = h('input', { type: 'file', accept: 'image/*', 'aria-label': 'Choose a screenshot',
+        onchange: () => { if (input.files[0]) useFile(input.files[0]); } });
+      const onMac = /Mac/i.test(navigator.userAgent);
+      clear(pictureStep).append(
+        h('strong', {}, time === null ? 'Paused. ' : ['Paused at ', videoClock(time), ' '], 'Now add the picture of this moment.'),
+        h('p', { class: 'small' }, onMac
+          ? 'Press Command + Control + Shift + 4, drag across the video above, then press Command + V.'
+          : 'Take a screenshot of the video above (on Windows: Windows key + Shift + S), then press Ctrl + V.',
+        ' You can also drop a picture on this box, or choose a file.'),
+        h('div', { class: 'row' }, input,
+          h('button', { type: 'button', class: 'button', onclick: () => open(null) }, 'Continue without a picture'),
+          h('button', { type: 'button', class: 'button', onclick: finish }, 'Back to watching')));
+      pictureStep.hidden = false;
+      bar.hidden = true;
+      document.addEventListener('paste', onPaste);
+    }
+    pictureStep.addEventListener('dragover', (event) => { event.preventDefault(); pictureStep.classList.add('is-over'); });
+    pictureStep.addEventListener('dragleave', () => pictureStep.classList.remove('is-over'));
+    pictureStep.addEventListener('drop', (event) => {
+      event.preventDefault();
+      pictureStep.classList.remove('is-over');
+      const file = imageFromTransfer(event.dataTransfer);
+      if (file && useFile) useFile(file);
+    });
+
+    /** Pause, note the time, take the picture if that is switched on, and open the workspace (or ask for the picture). */
+    async function analyseTube() {
+      if (!pictureStep.hidden || analyse.disabled) return;
+      analyse.disabled = true;
+      try {
+        let shot = null;
+        if (grabber && grabber.active) {
+          // Taken BEFORE pausing: a paused YouTube player covers the picture with its title and buttons.
+          try {
+            shot = await grabber.grab();
+          } catch (error) {
+            say(error.message);
+          }
+        }
+        const time = await tube.pause();  // read once; the form owns the timestamp from here on
+        if (shot) startAnalysis({ time, frame: { ...shot, source: 'video_capture' }, frameNote: null });
+        else askForPicture(time);
+      } finally {
+        analyse.disabled = false;
+      }
+    }
+    // The key works while this page has the keyboard. After a click inside the player, YouTube has it.
+    document.addEventListener('keydown', (event) => {
+      if (analyseKeyPressed(event)) {
+        event.preventDefault();
+        analyseTube();
+      }
+    });
+
+    manualButton.hidden = true;  // "Analyse this moment" does the same and more
+    return [marked, bar, notice, pictureStep];
+  }
 
   let viewer;
   if (video && video.playback.mode === 'html5') {
@@ -373,17 +548,14 @@ async function showMatch(matchId, wantedVideoId, seekTo) {
       analyseButton.hidden = true;
     });
     document.addEventListener('keydown', (event) => {
-      const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
-      if (event.key.toLowerCase() === 'a' && !typing && !watchStage.hidden && !event.metaKey && !event.ctrlKey && !document.querySelector('dialog[open]')) {
+      if (analyseKeyPressed(event)) {
         event.preventDefault();
         analyseNow();
       }
     });
     viewer = [h('div', { class: 'viewer' }, player, analyseButton), problem];
   } else if (video && video.playback.mode === 'embed') {
-    viewer = h('div', { class: 'viewer' },
-      h('iframe', { src: video.playback.source_url, title: video.label, allowFullscreen: true, referrerPolicy: 'strict-origin-when-cross-origin',
-        allow: 'accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture' }));
+    viewer = youTubeViewer();
   } else {
     viewer = h('div', { class: 'viewer fallback stack' },
       h('h3', {}, video ? 'This video cannot be played inside the app' : 'No video is linked to this match'),

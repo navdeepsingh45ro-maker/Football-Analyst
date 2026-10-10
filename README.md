@@ -52,13 +52,28 @@ API. The first start creates `backend/data/` with an empty database.
 |---|---|---|---|
 | a file on this computer | yes | yes | yes |
 | a direct link to a video file on the web | if that site allows it | yes | only if that site permits it |
-| YouTube | in YouTube's own player | no, you type it | no |
+| YouTube | in YouTube's own player | yes | as a screenshot: pasted, or taken for you |
 | any other link | no, opens in a new tab | no, you type it | no |
 
+**YouTube.** Press **Analyse this moment** under the player. The app pauses the
+video and reads its time through YouTube's own player messages. It then asks for
+the picture: take a screenshot of the paused video and paste it (on a Mac:
+Command + Control + Shift + 4, drag across the video, Command + V), or carry on
+without one and use the pitch.
+
+**One-click pictures** remove that step. Press **Turn on one-click pictures**;
+the browser asks what you want to share; choose this browser window or the
+screen it is on. From then on Analyse takes a still of the video area by itself,
+before pausing, so YouTube's pause buttons are not in the picture. Two small
+coloured marks beside the video show that sharing is on. It is the same as a
+screenshot, taken with your permission. The app still never reads the picture
+out of YouTube's player, which browsers forbid.
+
+**Save and keep watching** saves the observation and starts the video again in
+one press, for files and YouTube alike.
+
 For everything in the "no" columns there is a manual path: **Analyse a moment
-by hand**, type the timestamp, and paste, drop or choose a screenshot to draw
-on. The app never bypasses a site's restrictions; a browser deliberately refuses
-to let a page copy pixels from a video hosted elsewhere, and that is respected.
+by hand**, type the timestamp, and paste, drop or choose a screenshot to draw on.
 
 ## Where things are
 
@@ -149,6 +164,18 @@ pip install -r backend/requirements-dev.txt
 python -m playwright install chromium
 python -m pytest tests/browser -q --headed-browser   # --headed-browser lets you watch
 ```
+
+To run them in Safari's engine instead of Chrome's:
+
+```bash
+python -m playwright install webkit
+FOOTBALL_BROWSER=webkit python -m pytest tests/browser -q
+```
+
+One test is stricter than that engine allows: it checks clicks to a fraction of
+a pixel and a paused video's time to a millionth of a second, and Safari's
+engine clicks on whole pixels and settles a paused video a few milliseconds
+later. Its other checks pass there.
 
 Tests always use a throwaway data folder. They cannot touch `backend/data/`.
 
@@ -274,7 +301,11 @@ What it does and does not do:
 
 ## Known limits
 
-- YouTube timestamps are typed by hand; the app does not read YouTube's player.
+- One-click pictures depend on the browser being able to share the screen with
+  a page. The cropping is tested with a stand-in for that shared picture, not
+  with a person pressing Allow in each browser.
+- After a click inside YouTube's player, the keyboard belongs to YouTube, so the
+  `A` shortcut only works again once you click somewhere on the app's page.
 - A highlighted space is a rectangle.
 - CSV import only adds records; it never updates existing ones.
 - The JSON export does not contain frame pictures (the backup does).

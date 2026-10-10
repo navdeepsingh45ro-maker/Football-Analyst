@@ -501,6 +501,18 @@ dialog form, dialog .dialog-body { display: flex; flex-direction: column; max-he
 .diagram-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); padding: 12px; }
 .diagram-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); gap: 16px; }
 
+/* ── A YouTube video: the bar under it, and the marks used by one-click pictures ── */
+.tube-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.tube-bar .grow { flex: 1; }
+.tube-clock { color: var(--paper); font-size: 1.125rem; }
+/* Room above and below the video for the two marks. Their size, colours and position are what
+   js/editor/screen-capture.js looks for in a shared picture of the screen: change both together. */
+.capture-frame { position: relative; margin: 10px 0; }
+.capture-mark { display: none; position: absolute; width: 16px; height: 8px; }
+.capture-frame.is-capturing .capture-mark { display: block; }
+.capture-mark.top-left { left: 0; top: -10px; background: linear-gradient(to right, #ff00ff 50%, #00ffff 50%); }
+.capture-mark.bottom-right { right: 0; bottom: -10px; background: linear-gradient(to right, #00ffff 50%, #ff00ff 50%); }
+
 /* ── Looking a player up on the web (inside the player form) ── */
 .lookup { background: var(--chalk); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
 .lookup-row { display: flex; flex-wrap: wrap; gap: 8px; }
