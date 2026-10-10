@@ -1,0 +1,10 @@
+# ============================================================
+#  OPTIONAL: browser tests (tests/browser/)
+#  The app and the main test suite do not need any of this.
+#
+#  Install:  pip install -r requirements-dev.txt
+#            python -m playwright install chromium
+#  Run:      python -m pytest tests/browser -q
+# ============================================================
+-r requirements.txt
+playwright==1.63.0          # Drives a real browser to test the video and drawing tools

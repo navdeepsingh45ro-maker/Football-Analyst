@@ -1,0 +1,23 @@
+# ============================================================
+#  Football Analyst & Coach — Backend Dependencies
+#  Install: pip install -r requirements.txt
+# ============================================================
+
+# ── Core Framework ──────────────────────────────────────────
+fastapi==0.136.1            # Web framework (API routes, validation, serves the frontend)
+uvicorn==0.46.0             # ASGI server to run FastAPI
+
+# ── Database & ORM ──────────────────────────────────────────
+sqlalchemy==2.0.49          # ORM & database toolkit (the database itself is one SQLite file)
+alembic==1.20.0             # Database migrations (alembic/, run automatically by migrations_runner.py)
+
+# ── Data Validation ─────────────────────────────────────────
+pydantic==2.12.5            # Request/response schema validation (used by FastAPI)
+
+# ── Environment & Config ───────────────────────────────────
+python-dotenv==1.2.2        # Load backend/.env (optional settings such as an AI key)
+
+# ── Testing (dev only) ─────────────────────────────────────
+pytest==9.1.1               # Run: python -m pytest tests -q
+httpx==0.28.1               # Needed by FastAPI's TestClient. Starlette prints a deprecation
+                            # warning suggesting its successor "httpx2"; swapping is optional.

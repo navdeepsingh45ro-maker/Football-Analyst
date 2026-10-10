@@ -1,0 +1,9 @@
+# ============================================================
+#  OPTIONAL: AI assistance
+#  The app works fully without this. Install it only if you want
+#  AI-drafted summaries and hypotheses (see README, "Optional AI").
+#
+#  Install:  pip install -r requirements-ai.txt
+# ============================================================
+-r requirements.txt
+anthropic==1.13.0           # Official SDK for Claude (services/ai/anthropic_provider.py is the only file that uses it)

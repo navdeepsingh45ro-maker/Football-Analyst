@@ -1,0 +1,10 @@
+{
+  "name": "football-analyst-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "The frontend has NO dependencies and NO build step: the browser loads the files in js/ directly. This file only exists so that `npm test` runs the unit tests with Node's built-in test runner.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\""
+  }
+}

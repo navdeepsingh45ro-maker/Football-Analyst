@@ -1,0 +1,17 @@
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Secrets (AI keys etc.) never go into source control
+.env
+
+# Virtual environments
+.venv/
+venv/
+
+# YOUR DATA: the database, captured video frames and backups live here.
+# It is deliberately kept out of git. Back it up with Settings -> Backup.
+backend/data/
+
+node_modules/

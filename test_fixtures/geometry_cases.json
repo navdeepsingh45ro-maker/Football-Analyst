@@ -1,0 +1,96 @@
+{
+  "about": "Worked examples for the pitch geometry. Both implementations are tested against this ONE file: backend/services/geometry.py (pytest) and frontend/js/editor/geometry.js (node --test). If the two ever disagree, one of the test suites fails. Positions are metres on a 105 x 68 pitch unless a case says otherwise; null means 'undefined, no answer'.",
+  "tolerance": 1e-9,
+
+  "distance": [
+    {"why": "3-4-5 triangle", "a": [0, 0], "b": [3, 4], "expected": 5},
+    {"why": "5-12-13 triangle, not from the origin", "a": [10, 20], "b": [22, 25], "expected": 13},
+    {"why": "same point", "a": [40, 30], "b": [40, 30], "expected": 0},
+    {"why": "goal line to goal line along the middle", "a": [0, 34], "b": [105, 34], "expected": 105},
+    {"why": "order does not matter", "a": [3, 4], "b": [0, 0], "expected": 5}
+  ],
+
+  "direction_degrees": [
+    {"why": "straight at the goal being attacked", "start": [50, 34], "end": [60, 34], "expected": 0},
+    {"why": "straight to the right touchline", "start": [50, 34], "end": [50, 44], "expected": 90},
+    {"why": "straight to the left touchline", "start": [50, 34], "end": [50, 24], "expected": -90},
+    {"why": "straight back to own goal", "start": [50, 34], "end": [40, 34], "expected": 180},
+    {"why": "forward-right diagonal", "start": [50, 34], "end": [60, 44], "expected": 45},
+    {"why": "forward-left diagonal", "start": [50, 34], "end": [60, 24], "expected": -45},
+    {"why": "backward-right diagonal", "start": [50, 34], "end": [40, 44], "expected": 135},
+    {"why": "12 forward, 5 right", "start": [10, 20], "end": [22, 25], "expected": 22.619864948040426},
+    {"why": "a negative zero must not turn 180 into -180", "start": [50, 0.0], "end": [40, -0.0], "expected": 180},
+    {"why": "DEGENERATE: no movement has no direction", "start": [50, 34], "end": [50, 34], "expected": null}
+  ],
+
+  "describe_direction": [
+    {"degrees": 0, "expected": "towards the goal being attacked"},
+    {"degrees": 20, "expected": "towards the goal being attacked"},
+    {"degrees": 45, "expected": "forward and to the right"},
+    {"degrees": -45, "expected": "forward and to the left"},
+    {"degrees": 90, "expected": "across the pitch to the right"},
+    {"degrees": -90, "expected": "across the pitch to the left"},
+    {"degrees": 135, "expected": "backward and to the right"},
+    {"degrees": -135, "expected": "backward and to the left"},
+    {"degrees": 180, "expected": "back towards own goal"},
+    {"degrees": null, "expected": null}
+  ],
+
+  "angle_between": [
+    {"why": "perpendicular", "v1": [1, 0], "v2": [0, 1], "expected": 90},
+    {"why": "same direction, different lengths", "v1": [1, 0], "v2": [7, 0], "expected": 0},
+    {"why": "opposite directions", "v1": [1, 0], "v2": [-3, 0], "expected": 180},
+    {"why": "45 degrees", "v1": [1, 0], "v2": [5, 5], "expected": 45},
+    {"why": "the order of the vectors does not matter", "v1": [5, 5], "v2": [1, 0], "expected": 45},
+    {"why": "always 0-180, never negative", "v1": [1, 0], "v2": [0, -1], "expected": 90},
+    {"why": "DEGENERATE: first vector has no length", "v1": [0, 0], "v2": [1, 1], "expected": null},
+    {"why": "DEGENERATE: second vector has no length", "v1": [3, 4], "v2": [0, 0], "expected": null},
+    {"why": "DEGENERATE: both have no length", "v1": [0, 0], "v2": [0, 0], "expected": null},
+    {"why": "DEGENERATE: too short to have a direction", "v1": [1e-12, 0], "v2": [1, 0], "expected": null}
+  ],
+
+  "angle_at": [
+    {"why": "right angle at the origin", "vertex": [0, 0], "a": [1, 0], "b": [0, 1], "expected": 90},
+    {"why": "right angle away from the origin", "vertex": [50, 30], "a": [60, 30], "b": [50, 45], "expected": 90},
+    {"why": "corner of an equilateral triangle", "vertex": [0, 0], "a": [1, 0], "b": [0.5, 0.8660254037844386], "expected": 60},
+    {"why": "three points in a line, vertex in the middle", "vertex": [10, 10], "a": [20, 10], "b": [0, 10], "expected": 180},
+    {"why": "three points in a line, vertex at the end", "vertex": [0, 10], "a": [10, 10], "b": [20, 10], "expected": 0},
+    {"why": "DEGENERATE: first point sits on the vertex", "vertex": [5, 5], "a": [5, 5], "b": [9, 9], "expected": null},
+    {"why": "DEGENERATE: second point sits on the vertex", "vertex": [5, 5], "a": [9, 9], "b": [5, 5], "expected": null},
+    {"why": "DEGENERATE: all three points coincide", "vertex": [5, 5], "a": [5, 5], "b": [5, 5], "expected": null}
+  ],
+
+  "goal_mouth_angle": [
+    {"why": "from the penalty spot: 2 * atan(3.66 / 11)", "position": [94, 34], "pitch": [105, 68], "expected": 36.80738179878588},
+    {"why": "from the centre spot: 2 * atan(3.66 / 52.5)", "position": [52.5, 34], "pitch": [105, 68], "expected": 7.975764434326802},
+    {"why": "from the corner of the penalty area: much narrower", "position": [88.5, 13.84], "pitch": [105, 68], "expected": 10.28983971701042},
+    {"why": "on the goal line between the posts: the posts are on opposite sides", "position": [105, 34], "pitch": [105, 68], "expected": 180},
+    {"why": "on the goal line outside the posts: the goal has no visible width", "position": [105, 10], "pitch": [105, 68], "expected": 0},
+    {"why": "DEGENERATE: standing exactly on a post", "position": [105, 30.34], "pitch": [105, 68], "expected": null}
+  ],
+
+  "pitch_zone": [
+    {"position": [10, 5], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "defensive third", "lane": "left wide channel", "area": null}},
+    {"position": [10, 34], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "defensive third", "lane": "central channel", "area": "own penalty area"}},
+    {"position": [52.5, 20], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "middle third", "lane": "left half-space", "area": null}},
+    {"position": [80, 50], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "final third", "lane": "right half-space", "area": null}},
+    {"position": [80, 60], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "final third", "lane": "right wide channel", "area": null}},
+    {"position": [95, 34], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "final third", "lane": "central channel", "area": "opponent penalty area"}},
+    {"position": [95, 60], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "final third", "lane": "right wide channel", "area": null}},
+    {"why": "a boundary belongs to the zone further up the pitch", "position": [35, 34], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "middle third", "lane": "central channel", "area": null}},
+    {"why": "a boundary belongs to the zone further up the pitch", "position": [70, 34], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "final third", "lane": "central channel", "area": null}},
+    {"why": "edge of the penalty area extended = start of the half-space", "position": [50, 13.84], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "middle third", "lane": "left half-space", "area": null}},
+    {"why": "edge of the goal area extended = start of the central channel", "position": [50, 24.84], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "middle third", "lane": "central channel", "area": null}},
+    {"position": [50, 43.16], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "middle third", "lane": "right half-space", "area": null}},
+    {"position": [50, 54.16], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "middle third", "lane": "right wide channel", "area": null}},
+    {"why": "the far corner flag is still on the pitch", "position": [105, 68], "pitch": [105, 68], "expected": {"on_pitch": true, "third": "final third", "lane": "right wide channel", "area": null}},
+    {"why": "behind the own goal line", "position": [-1, 34], "pitch": [105, 68], "expected": {"on_pitch": false, "third": null, "lane": null, "area": null}},
+    {"why": "beyond the right touchline", "position": [50, 70], "pitch": [105, 68], "expected": {"on_pitch": false, "third": null, "lane": null, "area": null}},
+    {"why": "a shorter, narrower pitch moves the thirds; lanes stay tied to the goal", "position": [62, 30], "pitch": [90, 60], "expected": {"on_pitch": true, "third": "final third", "lane": "central channel", "area": null}}
+  ],
+
+  "distances_to_boundaries": [
+    {"position": [30, 10], "pitch": [105, 68], "expected": {"own_goal_line": 30, "opponent_goal_line": 75, "left_touchline": 10, "right_touchline": 58}},
+    {"why": "negative means beyond the line", "position": [106, 34], "pitch": [105, 68], "expected": {"own_goal_line": 106, "opponent_goal_line": -1, "left_touchline": 34, "right_touchline": 34}}
+  ]
+}
