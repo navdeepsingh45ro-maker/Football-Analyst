@@ -40,6 +40,8 @@ API. The first start creates `backend/data/` with an empty database.
    the video, still paused at the same moment. Press play and carry on.
 5. Find it again from the player's profile (**Observations**, **Diagrams**),
    the match, the **Observations** page, or the **Reports** page.
+6. Optional: ask the **Coach** (an AI) about what you have recorded. See
+   "Optional AI" below.
 
 ### What "Analyse" can do depends on the video
 
@@ -203,21 +205,28 @@ AI_PROVIDER=anthropic
 ANTHROPIC_API_KEY=your-key-here
 ```
 
-Restart the server. **Reports → AI assistance** then offers summaries, possible
-recurring movements, questions for further analysis, a draft scouting report and
-coaching ideas for one player.
+Restart the server. The **Coach** page then answers your own questions: about one
+player, one match, everything you have recorded, or coaching in general ("give me
+a drill for pressing triggers"). Player and match pages have an **Ask the coach**
+button that opens it with that player or match already chosen.
 
 What it does and does not do:
 
-- It is shown only that player's stored observations, assessments and stat lines.
-- Each statement must cite the records it rests on. The app checks those
-  references against what was actually sent, removes any that do not exist, and
-  flags statements with none.
-- With nothing recorded it is not called at all.
+- It is shown only your stored records for what you chose to ask about: one
+  player's profile, observations, assessments and stat lines; or one match's
+  observations; or, with nothing chosen, every player's profile, the most recent
+  400 observations and the most recent 100 assessments.
+- An answer keeps two kinds of knowledge apart. Anything about your players or
+  matches must cite the records it rests on; the app checks those references
+  against what was actually sent, removes any that do not exist, and flags a
+  statement left with none. General coaching advice is labelled as such.
+- Earlier questions and answers in the same conversation are sent along, so a
+  follow-up makes sense. The conversation is not stored: it is gone when you
+  leave the page.
 - Output is labelled AI-generated, is never saved by itself, and never touches
-  your assessments. You may keep a result in the notebook.
-- Using it sends that player's records to the provider. Anthropic charges per
-  request; Google charges only if you turn on billing for the key.
+  your assessments. You may keep an answer in the notebook.
+- Using it sends those records to the provider. Anthropic charges per request;
+  Google charges only if you turn on billing for the key.
 
 `AI_MODEL` is an optional setting (`AI_EFFORT` too, for Anthropic only); see
 `backend/config.py`. Another provider can be added as one file; see
@@ -237,5 +246,5 @@ What it does and does not do:
 - A highlighted space is a rectangle.
 - CSV import only adds records; it never updates existing ones.
 - The JSON export does not contain frame pictures (the backup does).
-- The AI provider code (Google and Anthropic) is tested against stand-ins, not
-  against the live services.
+- The automated tests check the AI code against stand-ins. Google's Gemini has
+  also been tried by hand with a real key; Anthropic's has not.

@@ -58,7 +58,7 @@ def status() -> dict:
                            f"Known providers: {', '.join(PROVIDERS)}."}
     return {"enabled": True, "provider": name, "model": model_in_use(),
             "message": f"AI assistance is on ({name}, model {model_in_use()}). Its credentials are checked the "
-                       "first time you use it. What you send is described on the Reports page."}
+                       "first time you use it. What is sent is described on the Coach page."}
 
 
 def get_provider() -> AIProvider:

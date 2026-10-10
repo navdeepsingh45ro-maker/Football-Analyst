@@ -151,6 +151,7 @@ function show() {
 
     clear(page.actions).append(
       h('a', { class: 'button primary', href: `video.html?match=${match.id}` }, 'Analyse'),
+      h('a', { class: 'button', href: `coach.html?match_id=${match.id}` }, 'Ask the coach'),
       h('button', { type: 'button', class: 'button', onclick: async () => {
         if (await matchDialog(match)) { toast('Match saved'); show(); }
       } }, 'Edit'),

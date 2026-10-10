@@ -43,7 +43,7 @@ export function observationRow(observation, { onChanged = () => {} } = {}) {
 /** A list of observations, or a friendly message when there are none. */
 export function observationList(observations, { onChanged = () => {}, emptyMessage = 'No observations yet.' } = {}) {
   if (!observations.length) return emptyState(emptyMessage);
-  return h('ul', { class: 'list' }, observations.map((observation) => observationRow(observation, { onChanged })));
+  return h('ul', { class: 'list boxed' }, observations.map((observation) => observationRow(observation, { onChanged })));
 }
 
 function fact(label, value) {

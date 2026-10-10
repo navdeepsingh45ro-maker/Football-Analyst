@@ -176,8 +176,16 @@ player with a real foreign key, and reports can find the recorded movement.
 disagree. Every group carries its observation ids.
 
 **AI is isolated and optional.** Nothing imports `services/ai` except the AI
-route. One file talks to the provider. The grounding and reference-checking
-rules live outside it and are tested with a stand-in.
+route. One file per provider talks to it (`google_provider.py`,
+`anthropic_provider.py`). The grounding and reference-checking rules live
+outside them, in `services/ai_service.py`, and are tested with a stand-in.
+
+**The coach keeps two kinds of knowledge apart.** `ask_coach()` answers a free
+question from the Coach page (`js/pages/coach.js`). A statement about your
+players or matches must cite records that were really sent, and is flagged if
+it does not; general coaching advice is a separate, labelled kind. The
+conversation lives in the page: each request carries the last few turns, and
+the server stores nothing.
 
 **Security posture: a local, single-user tool.** No accounts. The server binds
 to localhost and rejects other `Host` headers. A strict Content-Security-Policy

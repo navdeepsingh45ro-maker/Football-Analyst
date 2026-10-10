@@ -1,5 +1,6 @@
-// Dashboard: what you have recorded, what you worked on last, and what is waiting.
-// Every number and list comes from your own records (GET /api/dashboard).
+// Dashboard: where to go next, what you have recorded, what you worked on last,
+// and what is waiting. Every number and list comes from your own records
+// (GET /api/dashboard).
 
 import { api } from '../api.js';
 import { observationList } from '../components/observation-list.js';
@@ -10,19 +11,27 @@ import { emptyState, matchDate } from '../ui.js';
 
 const page = mountPage({ active: 'index.html', title: 'Dashboard' });
 
-function gettingStarted() {
+page.actions.append(
+  h('a', { class: 'button primary', href: 'video.html' }, 'Analyse a match'),
+  h('a', { class: 'button', href: 'coach.html' }, 'Ask the coach'));
+
+/** The three steps to a first saved analysis. Shown until all three are done, each ticked off as you go. */
+function gettingStarted(counts) {
   // A real sequence, so it is numbered: each step needs the one before it.
-  return h('div', { class: 'sheet stack' },
-    h('h2', {}, 'Nothing recorded yet'),
-    h('p', { class: 'prose' }, 'Three steps take you from an empty database to your first saved analysis.'),
-    h('ol', { class: 'stack' },
-      h('li', {}, h('a', { href: 'players.html' }, 'Add a player'), ' you want to study.'),
-      h('li', {}, h('a', { href: 'matches.html' }, 'Add a match'), ' and link its video: a file on this computer works best.'),
-      h('li', {}, 'Open the match under ', h('a', { href: 'video.html' }, 'Video analysis'), ', pause at an interesting moment and press Analyse.')));
+  const steps = [
+    [counts.players > 0, 'Add a player', 'Someone you want to study. Only the name is needed.', 'players.html', 'Go to Players'],
+    [counts.matches > 0, 'Add a match and link its video', 'A video file on this computer works best.', 'matches.html', 'Go to Matches'],
+    [counts.observations > 0, 'Pause the video and press Analyse', 'Draw what you see, write a note and save it.', 'video.html', 'Open Video analysis'],
+  ];
+  return h('section', { class: 'sheet' },
+    h('div', { class: 'section-head' }, h('h2', {}, 'Start here')),
+    h('ol', { class: 'steps' }, steps.map(([done, title, text, href, label]) => h('li', { class: done ? 'done' : null },
+      h('div', { class: 'step-text' }, h('strong', {}, title), h('div', { class: 'small muted' }, done ? 'Done' : text)),
+      done ? null : h('a', { class: 'button small', href }, label)))));
 }
 
 function section(title, body, link = null) {
-  return h('section', { class: 'section' },
+  return h('section', { class: 'sheet' },
     h('div', { class: 'section-head' }, h('h2', {}, title), link),
     body);
 }
@@ -47,9 +56,10 @@ function outstanding(data) {
 load(page.content, async () => {
   const data = await api.get('/api/dashboard');
   const counts = data.counts;
-  if (!counts.players && !counts.matches && !counts.observations) return gettingStarted();
+  const started = counts.players && counts.matches && counts.observations;
+  if (!counts.players && !counts.matches && !counts.observations) return gettingStarted(counts);
 
-  const tally = h('ul', { class: 'tally' },
+  const tiles = h('ul', { class: 'tiles' },
     [[counts.players, 'player', 'players', 'players.html'],
       [counts.matches, 'match', 'matches', 'matches.html'],
       [counts.matches_analysed, 'match analysed', 'matches analysed', 'matches.html'],
@@ -57,8 +67,8 @@ load(page.content, async () => {
       [counts.diagrams, 'diagram', 'diagrams', 'observations.html?has_diagram=true'],
       [counts.assessments, 'assessment', 'assessments', 'players.html'],
       [counts.notes, 'notebook entry', 'notebook entries', 'notebook.html'],
-    ].map(([count, one, many, href]) => h('li', {},
-      h('span', { class: 'figure' }, count), h('a', { href }, count === 1 ? one : many))));
+    ].map(([count, one, many, href]) => h('li', {}, h('a', { class: 'tile', href },
+      h('span', { class: 'figure' }, count), h('span', { class: 'tile-label' }, count === 1 ? one : many)))));
 
   const players = data.recent_players.length
     ? h('ul', { class: 'list' }, data.recent_players.map((player) => h('li', {},
@@ -73,12 +83,12 @@ load(page.content, async () => {
       h('div', { class: 'small muted' }, `${plural(entry.observation_count, 'observation')}, last saved ${formatMoment(entry.last_activity)}`))))
     : emptyState('No match has observations yet.');
 
-  return [
-    tally,
+  return h('div', { class: 'board' },
+    started ? null : gettingStarted(counts),
+    tiles,
     h('div', { class: 'columns' },
       section('Recently studied players', players, h('a', { href: 'players.html' }, 'All players')),
       section('Recent match analyses', matches, h('a', { href: 'matches.html' }, 'All matches'))),
     section('Latest observations', observationList(data.recent_observations), h('a', { href: 'observations.html' }, 'All observations')),
-    section('Waiting for you', outstanding(data.outstanding)),
-  ];
+    section('Waiting for you', outstanding(data.outstanding)));
 });

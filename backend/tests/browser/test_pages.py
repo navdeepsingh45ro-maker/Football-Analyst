@@ -47,7 +47,7 @@ PAGES = [
     "index.html", "players.html", "player.html?id=1", "player.html?id=1#statistics", "player.html?id=1#assessments",
     "player.html?id=1#diagrams", "player.html?id=1#development", "matches.html", "match.html?id=1", "video.html",
     "video.html?match=1", "pitch.html", "pitch.html?snapshot=2", "observations.html", "observations.html?player_id=1",
-    "reports.html", "reports.html#compare", "reports.html?player_id=1#player", "reports.html#ai", "notebook.html",
+    "reports.html", "reports.html#compare", "reports.html?player_id=1#player", "coach.html", "notebook.html",
     "notebook.html#ideas", "settings.html",
 ]
 
@@ -215,6 +215,97 @@ def test_backup_export_and_import_from_the_settings_page(page, live_app, populat
 
 
 def test_ai_is_off_by_default_and_the_page_says_how_that_affects_nothing(page, live_app, populated):
-    page.goto(f"{live_app.url}/reports.html#ai")
+    page.goto(f"{live_app.url}/coach.html")
     expect(page.get_by_text("AI assistance is off. Everything else works without it.")).to_be_visible()
-    expect(page.get_by_role("button", name="Ask the AI")).to_have_count(0)
+    expect(page.get_by_role("button", name="Ask the coach")).to_have_count(0)
+
+
+def test_the_dashboard_shows_the_next_step_until_the_first_analysis_exists(page, live_app):
+    page.goto(f"{live_app.url}/index.html")
+    steps = page.get_by_role("listitem")
+    expect(page.get_by_role("heading", name="Start here")).to_be_visible()
+    expect(steps.filter(has_text="Add a player").get_by_role("link", name="Go to Players")).to_be_visible()
+
+    live_app.request("POST", "/api/players", {"full_name": "Sam Finisher"})
+    page.reload()
+    done = steps.filter(has_text="Add a player")
+    expect(done).to_contain_text("Done")
+    expect(done.get_by_role("link")).to_have_count(0)  # a finished step no longer asks to be done
+    expect(steps.filter(has_text="Add a match").get_by_role("link", name="Go to Matches")).to_be_visible()
+
+
+def test_extra_observation_filters_are_one_press_away_and_open_when_in_use(page, live_app, populated):
+    page.goto(f"{live_app.url}/observations.html")
+    expect(page.get_by_label("Player", exact=True)).to_be_visible()
+    expect(page.get_by_label("Outcome")).to_be_hidden()
+    page.get_by_role("button", name="More filters").click()
+    page.get_by_label("Outcome").fill("Goal")
+    expect(page.get_by_text("1 observation matches these filters.")).to_be_visible()
+    page.get_by_role("button", name="Fewer filters").click()
+    expect(page.get_by_role("button", name="More filters (1 in use)")).to_be_visible()  # hidden, but not forgotten
+
+    page.goto(f"{live_app.url}/observations.html?outcome=Shot")  # arriving with one in use: it is in view
+    expect(page.get_by_label("Outcome")).to_be_visible()
+    expect(page.get_by_label("Outcome")).to_have_value("Shot")
+
+
+def test_a_conversation_with_the_coach(page, live_app, populated):
+    """The page's behaviour, with the AI's replies supplied by the test: no AI service is involved."""
+    striker, first = populated["striker"], populated["observations"][0]
+    asked = []
+
+    def reply(route):
+        body = route.request.post_data_json
+        asked.append(body)
+        route.fulfill(json={
+            "question": body["question"], "scope": {"player": {"id": striker["id"], "full_name": "Sam Finisher"}, "match": None},
+            "label": "AI-generated. Check before you rely on it.", "provider": "google", "model": "test-model", "note": None,
+            "refused": False, "generated_at": "2026-10-10T10:00:00Z",
+            "evidence_used": {"players": 1, "observations": 3, "assessments": 1, "statistics": 1, "observations_left_out": 0},
+            "answer": f"Reply number {len(asked)}.",
+            "points": [
+                {"statement": "He repeats the diagonal run.", "kind": "recorded", "unsupported": False,
+                 "references": [{"id": f"obs-{first}", "kind": "observation", "record_id": first, "player_id": None}]},
+                {"statement": "He scored forty goals.", "kind": "recorded", "unsupported": True, "references": []},
+                {"statement": "A rondo trains scanning.", "kind": "general", "unsupported": False, "references": []}],
+            "follow_ups": ["And in training?"], "insufficient_evidence": False, "evidence_note": "",
+            "invalid_references_removed": 0, "unsupported_statements": 1})
+
+    page.route("**/api/ai/status", lambda route: route.fulfill(json={
+        "enabled": True, "provider": "google", "model": "test-model", "message": "AI assistance is on.", "tasks": {}}))
+    page.route("**/api/ai/coach", reply)
+
+    page.goto(f"{live_app.url}/player.html?id={striker['id']}")
+    page.get_by_role("link", name="Ask the coach").click()  # arrives with that player already chosen
+    expect(page.get_by_label("Ask about a player")).to_have_value(str(striker["id"]))
+    expect(page.get_by_role("button", name="What should Sam Finisher work on in training?")).to_be_visible()
+
+    page.get_by_label("Your question").fill("What does he do well?")
+    page.get_by_label("Your question").press("Enter")
+    expect(page.get_by_text("Reply number 1.")).to_be_visible()
+    expect(page.get_by_text("About Sam Finisher")).to_be_visible()
+    expect(page.get_by_text("It was shown 1 player profile, 3 observations, 1 assessment and 1 stat line.")).to_be_visible()
+    assert asked[0]["player_id"] == striker["id"] and asked[0]["match_id"] is None and asked[0]["history"] == []
+
+    # The three kinds of statement are told apart in words.
+    points = page.locator(".points > li")
+    expect(points.nth(0)).to_contain_text("From your records")
+    expect(points.nth(1)).to_contain_text("Cites no record of yours. Do not rely on it.")
+    expect(points.nth(2)).to_contain_text("General coaching advice")
+    points.nth(0).get_by_role("link", name=f"observation #{first}").click()  # a reference opens the record itself
+    expect(page.get_by_role("dialog")).to_contain_text("Note for the diagonal run at 612.5.")
+    page.keyboard.press("Escape")
+
+    # A follow-up carries the conversation so far.
+    page.get_by_role("button", name="And in training?").first.click()
+    expect(page.get_by_text("Reply number 2.")).to_be_visible()
+    assert asked[1]["question"] == "And in training?"
+    assert asked[1]["history"] == [{"question": "What does he do well?", "answer": "Reply number 1."}]
+
+    # Nothing is saved until asked; then it lands in the notebook, linked to the player and the observation.
+    assert not [note for note in live_app.request("GET", "/api/notes") if note["note_type"] == "AI-generated draft"]
+    page.get_by_role("button", name="Keep in the notebook").first.click()
+    expect(page.get_by_role("link", name="Open it in the notebook")).to_be_visible()
+    kept = [note for note in live_app.request("GET", "/api/notes") if note["note_type"] == "AI-generated draft"]
+    assert len(kept) == 1 and kept[0]["player"]["id"] == striker["id"] and "AI-generated" in kept[0]["tags"]
+    assert "(General coaching advice) A rondo trains scanning." in kept[0]["body"]

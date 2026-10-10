@@ -65,7 +65,10 @@ export function formatDate(isoDate) {
 /** "2026-10-09T21:45:04Z" (UTC) -> the same moment in your local time. */
 export function formatMoment(isoMoment) {
   if (!isoMoment) return null;
-  return new Date(isoMoment).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  // Written the same way as formatDate(), so dates look alike everywhere: "10 Oct 2026, 14:05".
+  const moment = new Date(isoMoment);
+  return `${moment.getDate()} ${MONTHS[moment.getMonth()]} ${moment.getFullYear()}, `
+    + `${pad(moment.getHours())}:${pad(moment.getMinutes())}`;
 }
 
 /** Today's date as "2026-03-08", in local time (for the default of a date field). */

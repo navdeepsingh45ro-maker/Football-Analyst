@@ -1,5 +1,5 @@
-// Reports: patterns across matches, player comparisons, a printable player report,
-// and the optional AI assistance.
+// Reports: patterns across matches, player comparisons and a printable player report.
+// (The AI coach has its own page: coach.js.)
 //
 // EVERY NUMBER HERE IS A COUNT OF YOUR OWN RECORDS, and each one links to the
 // observations it counts. The page keeps four kinds of information apart and
@@ -7,9 +7,9 @@
 //   recorded facts          what you entered
 //   calculated statistics   counts and shares worked out from those records
 //   your interpretations    notes and assessments
-//   AI hypotheses           only on the last tab, labelled, and off unless you enable it
+//   AI hypotheses           never on this page; they live on the Coach page, labelled
 
-import { api, ApiError, vocabulary } from '../api.js';
+import { api, vocabulary } from '../api.js';
 import { matchLabel } from '../components/match-form.js';
 import { openObservation } from '../components/observation-list.js';
 import { rankedBars, zoneGrid } from '../charts.js';
@@ -17,7 +17,7 @@ import { clear, h } from '../dom.js';
 import { buildForm } from '../forms.js';
 import { formatDate, formatMoment, humanize, plural } from '../format.js';
 import { errorNote, mountPage } from '../layout.js';
-import { emptyState, orUnknown, pips, tabs, toast, unknown } from '../ui.js';
+import { emptyState, orUnknown, pips, tabs, unknown } from '../ui.js';
 
 const page = mountPage({
   active: 'reports.html', title: 'Reports',
@@ -324,94 +324,9 @@ async function playerReportTab() {
   return [h('div', { class: 'filters no-print' }, h('div', { class: 'field' }, h('label', { for: 'report-player' }, 'Player'), select)), output];
 }
 
-// ── Optional AI ──────────────────────────────────────────────────────────────
-function referenceLink(reference, playerId) {
-  if (reference.kind === 'observation') {
-    return h('a', { href: `observations.html?open=${reference.record_id}`,
-      onclick: (event) => { event.preventDefault(); openObservation(reference.record_id); } }, `observation #${reference.record_id}`);
-  }
-  const tab = reference.kind === 'assessment' ? 'assessments' : 'statistics';
-  return h('a', { href: `player.html?id=${playerId}#${tab}` }, `${reference.kind} #${reference.record_id}`);
-}
-
-function renderAiResult(result) {
-  if (!result.called_ai || result.refused) {
-    return h('div', { class: 'note caution' }, h('p', {}, result.evidence_note));
-  }
-  const used = result.evidence_used;
-  const save = h('button', { type: 'button', class: 'button', onclick: async () => {
-    const lines = [result.summary, '',
-      ...result.findings.map((finding) => `- (${finding.kind}) ${finding.statement} [${finding.references.map((r) => r.id).join(', ') || 'no record cited'}]`),
-      '', ...result.open_questions.map((question) => `? ${question}`), '', result.label];
-    const observationIds = [...new Set(result.findings.flatMap((finding) => finding.references)
-      .filter((reference) => reference.kind === 'observation').map((reference) => reference.record_id))];
-    const note = await api.post('/api/notes', {
-      note_type: 'AI-generated draft', title: `${result.task_name}: ${result.player.full_name}`,
-      body: lines.join('\n'), player_id: result.player.id, observation_ids: observationIds, tags: ['AI-generated'],
-    });
-    toast('Saved to the notebook as an AI-generated draft');
-    save.replaceWith(h('a', { class: 'button', href: `notebook.html?open=coaching_note-${note.id}` }, 'Open it in the notebook'));
-  } }, 'Keep this in the notebook');
-
-  return h('div', { class: 'note ai stack' },
-    h('p', {}, h('strong', {}, result.label)),
-    h('p', { class: 'small muted' }, `From ${result.provider}, model ${result.model}, ${formatMoment(result.generated_at)}. `
-      + `It was shown ${plural(used.observations, 'observation')}, ${plural(used.assessments, 'assessment')} and `
-      + `${plural(used.statistics, 'stat line')} of ${result.player.full_name}, and nothing else.`
-      + (used.observations_left_out ? ` ${used.observations_left_out} older observations were left out.` : '')
-      + (result.note ? ` ${result.note}` : '')),
-    result.insufficient_evidence ? h('div', { class: 'note caution' }, 'The AI judged the records too thin for a firm answer.') : null,
-    result.summary ? h('p', { class: 'prose' }, result.summary) : null,
-    result.findings.length ? h('ul', { class: 'list' }, result.findings.map((finding) => h('li', {},
-      h('span', { class: 'tag' }, finding.kind === 'recorded' ? 'Restates your records' : 'Hypothesis'), ' ', finding.statement,
-      h('div', { class: 'small' }, finding.unsupported
-        ? h('strong', {}, 'Cites no record of yours. Do not rely on it.')
-        : ['Rests on: ', finding.references.map((reference, index) => [index ? ', ' : '', referenceLink(reference, result.player.id)])])))) : null,
-    result.open_questions.length ? h('div', {}, h('h3', {}, 'Questions it suggests'),
-      h('ul', {}, result.open_questions.map((question) => h('li', {}, question)))) : null,
-    result.evidence_note ? h('p', { class: 'small muted' }, `On the evidence: ${result.evidence_note}`) : null,
-    result.invalid_references_removed ? h('p', { class: 'small' },
-      `${result.invalid_references_removed} reference(s) to records that were never sent were removed.`) : null,
-    h('div', { class: 'row no-print' }, save,
-      h('span', { class: 'small muted' }, 'Nothing is saved unless you press this. Your assessments are never changed.')));
-}
-
-async function aiTab() {
-  const [status, players] = await Promise.all([api.get('/api/ai/status'), api.get('/api/players')]);
-  const intro = h('div', { class: 'stack' },
-    h('p', { class: 'prose' }, 'Optional. The AI is given one player\'s stored observations, assessments and stat lines, and must '
-      + 'point at the records behind each statement. The app checks those references and flags any statement that has none. '
-      + 'What comes back is a set of hypotheses for you to test, not a verdict.'),
-    h('div', { class: status.enabled ? 'note' : 'note caution' }, status.message));
-  if (!status.enabled) return intro;
-  if (!players.length) return [intro, emptyState('Record a player first.')];
-
-  const form = buildForm([
-    { name: 'player_id', label: 'Player', type: 'select', numeric: true, required: true, width: 'half', options: players.map((p) => [p.id, p.full_name]) },
-    { name: 'task', label: 'What to ask for', type: 'select', required: true, width: 'half', options: Object.entries(status.tasks) },
-  ]);
-  const output = h('div', { class: 'section' });
-  const ask = h('button', { type: 'button', class: 'button primary', onclick: async () => {
-    const { values } = form.read();
-    ask.disabled = true;
-    clear(output).append(h('p', { class: 'muted' }, 'Asking. This can take a minute…'));
-    try {
-      clear(output).append(renderAiResult(await api.post('/api/ai/player-analysis', values)));
-    } catch (error) {
-      clear(output).append(error instanceof ApiError ? h('div', { class: 'note error', role: 'alert' }, error.message) : errorNote(error));
-    } finally {
-      ask.disabled = false;
-    }
-  } }, 'Ask the AI');
-  return [intro, h('div', { class: 'section stack' }, form.element,
-    h('p', { class: 'small muted' }, `Pressing the button sends that player's records to ${status.provider}. Nothing else leaves this computer.`),
-    ask), output];
-}
-
 // ── The page ─────────────────────────────────────────────────────────────────
 page.content.append(tabs([
   { id: 'patterns', label: 'Patterns', render: patternsTab },
   { id: 'compare', label: 'Compare players', render: compareTab },
   { id: 'player', label: 'Player report', render: playerReportTab },
-  { id: 'ai', label: 'AI assistance (optional)', render: aiTab },
 ], 'patterns').element);

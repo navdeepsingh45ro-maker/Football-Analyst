@@ -186,7 +186,7 @@ function referenceSection() {
 // ── The page ─────────────────────────────────────────────────────────────────
 async function aiSection() {
   const status = await api.get('/api/ai/status');
-  return section('AI assistance (optional)',
+  return section('AI coach (optional)',
     h('div', { class: status.enabled ? 'note' : 'note caution' }, status.message),
     h('p', { class: 'small muted' }, 'It is switched on or off in the file backend/.env, not here, so that a key is never typed into a web page. The README explains how.'));
 }

@@ -65,7 +65,7 @@ function refresh() {
         h('a', { href: 'observations.html' }, 'Show all observations'))) : null,
       h('div', { class: 'row spread' },
         h('p', { class: 'muted' }, filtered
-          ? `${plural(result.total, 'observation')} match these filters.`
+          ? `${plural(result.total, 'observation')} ${result.total === 1 ? 'matches' : 'match'} these filters.`
           : `${plural(result.total, 'observation')} in total.`),
         result.total ? h('a', { class: 'button small', href: `/api/export/csv/observations?${new URLSearchParams(filters)}`,
           title: 'Download exactly these observations as a spreadsheet file' }, 'Download these as CSV') : null),
@@ -81,6 +81,12 @@ function refresh() {
   });
   return show();
 }
+
+// The first three filters are always shown; the others sit behind "More filters".
+const MAIN_FILTERS = 3;
+const FILTER_COUNT = 12;
+const EXTRA_FILTER_NAMES = ['team_id', 'position', 'category', 'movement_category', 'outcome', 'ended_in_shot_or_chance',
+  'has_diagram', 'date_from', 'date_to'];
 
 async function start() {
   try {
@@ -103,6 +109,21 @@ async function start() {
       { name: 'date_to', label: 'Match date to', type: 'date' },
     ], filtersFromAddress());
     form.element.className = 'filters';
+    // Twelve filters at once is a wall. Search, Player and Match stay in view; the
+    // rest open with one press, and open by themselves when one of them is in use.
+    const fields = [...form.element.querySelectorAll('.field')];
+    const extra = fields.slice(MAIN_FILTERS, FILTER_COUNT);
+    extra.forEach((field) => field.classList.add('extra'));
+    const inUse = () => Object.keys(filtersFromForm()).filter((name) => EXTRA_FILTER_NAMES.includes(name)).length;
+    const more = h('button', { type: 'button', class: 'button', 'aria-expanded': 'false', onclick: () => showExtra(!form.element.hasAttribute('data-more')) });
+    function showExtra(open) {
+      form.element.toggleAttribute('data-more', open);
+      more.setAttribute('aria-expanded', String(open));
+      more.textContent = open ? 'Fewer filters' : `More filters${inUse() ? ` (${inUse()} in use)` : ''}`;
+    }
+    fields[MAIN_FILTERS - 1].after(h('div', { class: 'field' }, more));
+    showExtra(inUse() > 0);
+    form.element.addEventListener('change', () => showExtra(form.element.hasAttribute('data-more')));
 
     let timer = null;
     form.element.addEventListener('input', () => {

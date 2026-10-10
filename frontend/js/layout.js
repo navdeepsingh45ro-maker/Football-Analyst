@@ -18,6 +18,7 @@ const NAVIGATION = [
   ['observations.html', 'Observations'],
   ['reports.html', 'Reports'],
   ['notebook.html', 'Notebook'],
+  ['coach.html', 'Coach', 'push'],  // 'push' starts the group at the right-hand end of the strip
   ['settings.html', 'Settings'],
 ];
 
@@ -48,8 +49,8 @@ export function mountPage({ active, title, lede = null, wide = false }) {
   document.body.append(
     h('header', { class: 'bar' },
       h('a', { class: 'brand', href: 'index.html' }, brandMark(), 'Football Analyst'),
-      h('nav', { class: 'nav', 'aria-label': 'Main' }, NAVIGATION.map(([href, label]) => h('a', {
-        href, 'aria-current': href === active ? 'page' : null,
+      h('nav', { class: 'nav', 'aria-label': 'Main' }, NAVIGATION.map(([href, label, place]) => h('a', {
+        href, class: place || null, 'aria-current': href === active ? 'page' : null,
       }, label)))),
     h('main', { class: wide ? 'page wide' : 'page' },
       before,

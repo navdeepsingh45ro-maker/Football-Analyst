@@ -367,6 +367,7 @@ function show() {
       player.age !== null ? `${player.age} years old` : null, player.nationality].filter(Boolean).join(', '));
 
     clear(page.actions).append(
+      h('a', { class: 'button', href: `coach.html?player_id=${player.id}` }, 'Ask the coach'),
       h('button', { type: 'button', class: 'button', onclick: async () => {
         if (await playerDialog(player)) { toast('Player saved'); show(); }
       } }, 'Edit'),
