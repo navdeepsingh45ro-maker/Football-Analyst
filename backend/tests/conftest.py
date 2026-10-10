@@ -13,7 +13,7 @@ os.environ.pop("DATABASE_URL", None)
 os.environ["ALLOWED_HOSTS"] = "127.0.0.1,localhost,testserver"  # "testserver" is what TestClient calls itself
 # Tests must never read your real backend/.env or reach a real AI service.
 os.environ["FOOTBALL_IGNORE_DOTENV"] = "1"
-for _name in ("AI_PROVIDER", "ANTHROPIC_API_KEY", "AI_MODEL"):
+for _name in ("AI_PROVIDER", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "AI_MODEL"):
     os.environ.pop(_name, None)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

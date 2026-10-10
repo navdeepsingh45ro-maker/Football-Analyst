@@ -44,12 +44,13 @@ DATABASE_URL = make_url(os.environ["DATABASE_URL"]) if os.getenv("DATABASE_URL")
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
 
 # ── Optional AI assistance ───────────────────────────────────────────────────
-# OFF unless you switch it on in backend/.env with  AI_PROVIDER=anthropic .
+# OFF unless you switch it on in backend/.env with  AI_PROVIDER=google  (or anthropic).
 # Being explicit means an API key that merely happens to be set on this computer
 # is never used (and never billed) without you deciding so.
 AI_PROVIDER = (os.getenv("AI_PROVIDER") or "").strip().lower()
-AI_MODEL = (os.getenv("AI_MODEL") or "claude-opus-5-5").strip()
-AI_EFFORT = (os.getenv("AI_EFFORT") or "medium").strip().lower()  # low | medium | high | xhigh | max
+AI_MODEL = (os.getenv("AI_MODEL") or "").strip()  # empty = that provider's default, see services/ai/__init__.py
+# Only the anthropic provider uses this: low | medium | high | xhigh | max
+AI_EFFORT = (os.getenv("AI_EFFORT") or "medium").strip().lower()
 
 # Largest frame image accepted when saving a tactical snapshot (bytes, after decoding).
 MAX_FRAME_BYTES = 8 * 1024 * 1024

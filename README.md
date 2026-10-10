@@ -175,13 +175,28 @@ Before any future database upgrade the app also saves its own
 
 ## Optional AI
 
-Off by default, and everything else works identically without it. To enable:
+Off by default, and everything else works identically without it. Two providers
+are built in; pick one.
+
+**Google (Gemini)**, which has a free tier. Get a key at
+https://aistudio.google.com/apikey, then create `backend/.env` (ignored by git):
+
+```
+AI_PROVIDER=google
+GEMINI_API_KEY=your-key-here
+```
+
+Nothing needs installing. The default model is `gemini-3.8-flash`. On Google's
+free tier there is a limit on requests per minute and per day, and Google may
+use what you send to improve its products; on the paid tier it does not. Keep
+that in mind before sending notes about real people.
+
+**Anthropic (Claude)**, which is paid per request and is not covered by a Claude
+Pro or Max subscription:
 
 ```bash
 pip install -r backend/requirements-ai.txt
 ```
-
-Create `backend/.env` (ignored by git):
 
 ```
 AI_PROVIDER=anthropic
@@ -201,10 +216,12 @@ What it does and does not do:
 - With nothing recorded it is not called at all.
 - Output is labelled AI-generated, is never saved by itself, and never touches
   your assessments. You may keep a result in the notebook.
-- Using it sends that player's records to the provider and costs money per request.
+- Using it sends that player's records to the provider. Anthropic charges per
+  request; Google charges only if you turn on billing for the key.
 
-`AI_MODEL` and `AI_EFFORT` are optional settings; see `backend/config.py`. A
-different provider can be added as one file; see `backend/services/ai/__init__.py`.
+`AI_MODEL` is an optional setting (`AI_EFFORT` too, for Anthropic only); see
+`backend/config.py`. Another provider can be added as one file; see
+`backend/services/ai/__init__.py`.
 
 ## What it deliberately does not do
 
@@ -220,4 +237,5 @@ different provider can be added as one file; see `backend/services/ai/__init__.p
 - A highlighted space is a rectangle.
 - CSV import only adds records; it never updates existing ones.
 - The JSON export does not contain frame pictures (the backup does).
-- The AI provider code is tested against a stand-in, not against the live service.
+- The AI provider code (Google and Anthropic) is tested against stand-ins, not
+  against the live services.

@@ -42,7 +42,7 @@ class LiveServer:
     def start(self) -> "LiveServer":
         env = {**os.environ, "FOOTBALL_DATA_DIR": str(self.data_dir), "ALLOWED_HOSTS": "127.0.0.1",
                "FOOTBALL_IGNORE_DOTENV": "1"}
-        for name in ("AI_PROVIDER", "ANTHROPIC_API_KEY", "AI_MODEL"):
+        for name in ("AI_PROVIDER", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "AI_MODEL"):
             env.pop(name, None)
         self.process = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "main:app", "--port", str(self.port), "--log-level", "warning"],

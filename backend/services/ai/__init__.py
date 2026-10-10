@@ -6,7 +6,8 @@ feature works identically whether AI is configured, misconfigured or absent.
 HOW THE PIECES FIT
 ------------------
     services/ai/base.py                what any AI provider must be able to do
-    services/ai/anthropic_provider.py  the ONE file that talks to Anthropic
+    services/ai/google_provider.py     the ONE file that talks to Google (Gemini)
+    services/ai/anthropic_provider.py  the ONE file that talks to Anthropic (Claude)
     services/ai/__init__.py            (this file) picks the provider from the settings
     services/ai_service.py             builds the question from YOUR stored records and
                                        checks the answer's references. Knows no provider.
@@ -15,10 +16,12 @@ To use a different AI company later: write one new provider file with the same
 `complete()` method and add it to PROVIDERS below. Nothing else changes.
 
 SETTINGS (backend/.env, see config.py)
-    AI_PROVIDER=anthropic     switches AI on. Leave it out and AI is off.
-    AI_MODEL=...              optional; which model to use
-The provider's own credentials are read by its SDK from the environment. This
-app never stores, logs or returns them.
+    AI_PROVIDER=google        switches AI on (or: anthropic). Leave it out and AI is off.
+    AI_MODEL=...              optional; which model to use. Empty means the provider's
+                              own default from DEFAULT_MODELS below.
+    GEMINI_API_KEY=...        the key for google;  ANTHROPIC_API_KEY=... for anthropic
+The key is read from the environment by the provider file only. This app never
+stores, logs or returns it.
 """
 from importlib import import_module
 
@@ -28,10 +31,18 @@ from services.ai.base import AIAnswer, AIProvider
 
 # name used in AI_PROVIDER -> (module, class)
 PROVIDERS = {
+    "google": ("services.ai.google_provider", "GoogleProvider"),
     "anthropic": ("services.ai.anthropic_provider", "AnthropicProvider"),
 }
 
-__all__ = ["AIAnswer", "AIProvider", "PROVIDERS", "get_provider", "status"]
+# Each company has its own model names, so the model used when AI_MODEL is empty depends on the provider.
+DEFAULT_MODELS = {"google": "gemini-3.8-flash", "anthropic": "claude-opus-5-5"}
+
+__all__ = ["AIAnswer", "AIProvider", "DEFAULT_MODELS", "PROVIDERS", "get_provider", "status"]
+
+
+def model_in_use() -> str:
+    return config.AI_MODEL or DEFAULT_MODELS.get(config.AI_PROVIDER, "")
 
 
 def status() -> dict:
@@ -45,8 +56,8 @@ def status() -> dict:
         return {"enabled": False, "provider": name, "model": None,
                 "message": f"AI_PROVIDER is set to '{name}', which this app does not know. "
                            f"Known providers: {', '.join(PROVIDERS)}."}
-    return {"enabled": True, "provider": name, "model": config.AI_MODEL,
-            "message": f"AI assistance is on ({name}, model {config.AI_MODEL}). Its credentials are checked the "
+    return {"enabled": True, "provider": name, "model": model_in_use(),
+            "message": f"AI assistance is on ({name}, model {model_in_use()}). Its credentials are checked the "
                        "first time you use it. What you send is described on the Reports page."}
 
 
@@ -57,4 +68,4 @@ def get_provider() -> AIProvider:
         raise Unavailable(current["message"])
     module_name, class_name = PROVIDERS[config.AI_PROVIDER]
     provider_class = getattr(import_module(module_name), class_name)
-    return provider_class(model=config.AI_MODEL, effort=config.AI_EFFORT)
+    return provider_class(model=model_in_use(), effort=config.AI_EFFORT)
