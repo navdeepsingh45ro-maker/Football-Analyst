@@ -2,6 +2,7 @@
 
 Acceptance test L:  open match -> pause video -> open analysis -> annotate -> save
                     -> retrieve from the player's profile -> inspect the saved diagram.
+                    The video stays in view beside the drawing the whole time.
 Acceptance test F:  resize the display; annotations stay on their spot.
 Acceptance test K:  an unplayable video and a match with no video still leave a way to work.
 
@@ -70,6 +71,11 @@ def drag_on(page, selector: str, start: tuple[float, float], end: tuple[float, f
     page.mouse.up()
 
 
+def clear_of_the_video(page, selector: str) -> None:
+    """In a narrow window the video stays at the top; scroll so that `selector` is wholly below it."""
+    page.locator(selector).evaluate("(element) => element.scrollIntoView({ block: 'end' })")
+
+
 def drawn_at(page, surface: str, shape: str) -> tuple[float, float]:
     """Where a shape's centre is DRAWN, as a fraction of its surface's box on screen."""
     outer = page.locator(surface).bounding_box()
@@ -128,8 +134,8 @@ def test_watch_pause_analyse_annotate_save_and_find_it_again(page, live_app, sce
     page.goto(f"{live_app.url}/video.html?match={match_id}")
     # Ready once its size and length are known. (Safari loads no picture until the video is played.)
     wait_until(page, "() => { const v = document.querySelector('video'); return Boolean(v) && v.readyState >= 1; }")
-    analyse = page.get_by_role("button", name="Analyse", exact=True)
-    expect(analyse).to_be_visible()  # the floating button, on top of the video
+    analyse = page.get_by_role("button", name="Analyse this moment")
+    expect(analyse).to_be_visible()  # in the bar under the video
     # Muted, because Safari only lets a page start a video by itself when it makes no sound.
     page.evaluate("() => { const v = document.querySelector('video'); v.muted = true; return v.play(); }")
     wait_until(page, "() => document.querySelector('video').currentTime > 1.2")
@@ -137,7 +143,7 @@ def test_watch_pause_analyse_annotate_save_and_find_it_again(page, live_app, sce
 
     # ── Pause by pressing Analyse ────────────────────────────────────────────
     analyse.click()
-    expect(page.locator("#analysis")).to_be_visible()
+    expect(page.locator(FRAME)).to_be_visible()
     paused = video_state(page)
     assert paused["paused"] is True
     assert (paused["width"], paused["height"]) == (640, 360)
@@ -148,6 +154,13 @@ def test_watch_pause_analyse_annotate_save_and_find_it_again(page, live_app, sce
     assert seconds(time_field.input_value()) == pytest.approx(paused["time"], abs=0.001)
     # The paused frame was captured and is what the drawing surface shows.
     assert page.locator(f"{FRAME} image").get_attribute("href").startswith("data:image/jpeg;base64,")
+
+    # ── The video stays in view beside the drawing: watch and analyse at the same time ──
+    video_box = page.locator("video").bounding_box()
+    frame_box = page.locator(FRAME).bounding_box()
+    assert video_box["x"] + video_box["width"] <= frame_box["x"], "side by side, the video on the left"
+    for box in (video_box, frame_box):
+        assert box["y"] >= 0 and box["y"] + box["height"] <= 900, "both wholly in view at once"
 
     # ── Say who it is about ──────────────────────────────────────────────────
     page.get_by_role("button", name="Add Sam Finisher").click()  # offered because he is in the lineup
@@ -191,8 +204,11 @@ def test_watch_pause_analyse_annotate_save_and_find_it_again(page, live_app, sce
     page.set_viewport_size({"width": 900, "height": 1000})  # narrow: the layout stacks, the surfaces change size
     assert drawn_at(page, FRAME, 'g[data-kind="subject"]') == pytest.approx((0.40, 0.50), abs=NEAR)
     assert drawn_at(page, PITCH, 'g[data-kind="subject"]') == pytest.approx(pitch(78, 30.5), abs=NEAR)
+    # The video stays at the top of a narrow window, smaller, still in view.
+    assert page.locator("video").bounding_box()["height"] <= 0.31 * 1000
     # A click at the new size is still stored at the right place (checked after saving, below).
     tool(page, "Attacking player marker (a teammate when your player attacks)")
+    clear_of_the_video(page, FRAME)
     click_on(page, FRAME, (0.20, 0.30))
     page.set_viewport_size({"width": 1440, "height": 900})
 
@@ -203,12 +219,14 @@ def test_watch_pause_analyse_annotate_save_and_find_it_again(page, live_app, sce
     page.get_by_role("button", name="Save observation").click()
     expect(page.get_by_text(re.compile(r"Observation #\d+ saved"))).to_be_visible()
 
-    # ── Back at the video: still paused, at exactly the same moment ──────────
-    expect(page.locator("#analysis")).to_have_count(0)
+    # ── Ready for the next moment; the video still paused, at exactly the same moment ──
+    expect(page.locator(FRAME)).to_have_count(0)  # a fresh moment has no picture yet
+    expect(page.locator(".draft-head h2")).to_have_text("New moment")
+    expect(page.get_by_text("Sam Finisher (studied)")).to_be_visible()  # the player carries over to the next moment
     after = video_state(page)
     assert after["paused"] is True, "saving must not resume playback"
     assert after["time"] == pytest.approx(paused["time"], abs=SAME_MOMENT)
-    expect(page.locator(".side-panel")).to_contain_text("Off-ball movement: Diagonal run")
+    expect(page.locator(".desk-moments")).to_contain_text("Off-ball movement: Diagonal run")
     page.snap("3-saved")
 
     # ── What was stored ──────────────────────────────────────────────────────
@@ -368,9 +386,10 @@ def test_a_moment_can_be_analysed_without_a_playable_video(page, live_app):
 
     page.goto(f"{live_app.url}/video.html?match={match['id']}")
     expect(page.get_by_text("No video is linked to this match")).to_be_visible()
-    expect(page.get_by_role("button", name="Analyse", exact=True)).to_have_count(0)  # nothing pretends to be playable
-    page.get_by_role("button", name="Analyse a moment by hand").click()
+    expect(page.get_by_role("button", name="Analyse this moment")).to_have_count(0)  # nothing pretends to be playable
+    expect(page.get_by_role("button", name="Watch it in another window")).to_be_visible()  # any window can still be used
 
+    # The moment is ready to be filled in by hand, beside it.
     expect(page.get_by_text("No picture of this moment yet")).to_be_visible()
     page.get_by_role("textbox", name="Video time").fill("32:14")
     page.get_by_label("Choose a screenshot").set_input_files(str(SCREENSHOT))
@@ -403,8 +422,10 @@ def test_a_video_the_browser_cannot_play_is_explained_not_hidden(page, live_app,
     problem = page.get_by_role("alert")
     expect(problem).to_be_visible()
     expect(problem).to_contain_text("typing the timestamp and adding a screenshot")
-    expect(page.get_by_role("button", name="Analyse", exact=True)).to_be_hidden()
-    expect(page.get_by_role("button", name="Analyse a moment by hand")).to_be_visible()  # the fallback remains
+    expect(page.get_by_role("button", name="Analyse this moment")).to_be_hidden()
+    # What still works: the moment beside it, by hand, and watching it in another app's window.
+    expect(page.get_by_text("No picture of this moment yet")).to_be_visible()
+    expect(page.get_by_role("button", name="Watch it in another window instead")).to_be_visible()
 
 
 def test_reopening_a_saved_drawing_to_change_it(page, live_app, scene):
@@ -461,7 +482,11 @@ def test_a_youtube_match_is_paused_timed_and_analysed_with_one_button(page, live
         opened.append(route.request.url), route.fulfill(content_type="text/html", body=YOUTUBE_STAND_IN)))
     # Note everything the page asks of the player.
     page.add_init_script("""window.asked = []; addEventListener('message', (message) => {
-        try { const said = JSON.parse(message.data); if (said.event === 'stand-in-was-asked') window.asked.push([said.func, said.args]); } catch {}
+        try {
+            const said = JSON.parse(message.data);
+            // Leave out the request to be told about errors, sent once the player answers.
+            if (said.event === 'stand-in-was-asked' && said.func !== 'addEventListener') window.asked.push([said.func, said.args]);
+        } catch {}
     });""")
     asked = lambda: page.evaluate("() => window.asked")  # noqa: E731
 
@@ -470,16 +495,17 @@ def test_a_youtube_match_is_paused_timed_and_analysed_with_one_button(page, live
     expect(analyse).to_be_visible()
     expect(page.get_by_text("at 1:15")).to_be_visible()  # the player's own time, shown without asking you
     assert "enablejsapi=1" in opened[0] and "start=42" in opened[0] and f"origin=http%3A%2F%2F127.0.0.1%3A{live_app.port}" in opened[0]
-    expect(page.get_by_role("button", name="Analyse a moment by hand")).to_be_hidden()  # one way in, not two
+    expect(page.get_by_role("button", name="Watch it in another window instead")).to_be_visible()  # if it will not play here
 
     # ── One press: the video is paused and its time is read ──────────────────
     analyse.click()
     step = page.locator(".dropzone")
-    expect(step).to_contain_text("Paused at")
-    expect(step).to_contain_text("1:15")
-    expect(step).to_contain_text("Now add the picture of this moment.")
+    expect(page.locator(".draft-head")).to_contain_text("1:15")
+    expect(page.get_by_role("textbox", name="Video time")).to_have_value("1:15.75")
+    expect(step).to_contain_text("Now add the picture of this moment")
+    expect(step).to_contain_text("turn on one-click pictures")  # the way to get it without YouTube's buttons on it
     assert asked() == [["pauseVideo", []]]
-    expect(page.locator(".viewer iframe")).to_be_visible()  # the paused video is still there to take a screenshot of
+    expect(page.locator(".viewer iframe")).to_be_visible()  # the paused video is still there, beside the moment
 
     # ── The picture goes in, and the workspace opens with the time already filled ──
     step.get_by_label("Choose a screenshot").set_input_files(str(SCREENSHOT))
@@ -503,23 +529,33 @@ def test_a_youtube_match_is_paused_timed_and_analysed_with_one_button(page, live
     assert (observation["snapshots"][0]["frame_width"], observation["snapshots"][0]["frame_source"]) == (960, "upload")
 
     # ── A saved moment takes the player back to it ───────────────────────────
-    page.locator(".side-panel").get_by_role("button", name=re.compile("1:15")).click()
+    page.locator(".desk-moments").get_by_role("button", name=re.compile("1:15")).click()
     wait_until(page, "() => window.asked.length === 3")
     assert asked()[2] == ["seekTo", [75.75, True]]
 
-    # ── Without a picture: straight to the pitch ─────────────────────────────
+    # ── Keys: back five seconds, forward five seconds, pause ────────────────
+    page.locator("h1").click()  # the keyboard belongs to the page, not to a box or the player
+    page.keyboard.press("j")
+    expect(page.locator(".watch-clock")).to_have_text("at 1:10")  # the player says where it is now
+    page.keyboard.press("l")
+    expect(page.locator(".watch-clock")).to_have_text("at 1:15")
+    page.keyboard.press("k")
+    wait_until(page, "() => window.asked.length === 6")
+    assert asked()[3:] == [["seekTo", [70.75, True]], ["seekTo", [75.75, True]], ["pauseVideo", []]]
+
+    # ── Without a picture: the pitch is there at once ────────────────────────
     analyse.click()
-    page.get_by_role("button", name="Continue without a picture").click()
     expect(page.locator(PITCH)).to_be_visible()
-    expect(page.get_by_text("No picture of this moment yet")).to_be_visible()
+    expect(page.get_by_text("Now add the picture of this moment")).to_be_visible()
 
 
 # What the browser would hand over after you agree to share the screen: a picture of the whole page,
 # twice as large as the page (a high-resolution screen). The headless test browser cannot really share
 # its screen, so this draws that picture itself from where things actually are on the page: the video
-# area green with a red centre, and the two marks wherever the page is showing them.
+# area green with a red centre, and the two marks wherever the page is showing them. With
+# window.pausedLook set, the video area is covered in white, as a paused player covers it with its buttons.
 SHARED_SCREEN_STAND_IN = """
-navigator.mediaDevices.getDisplayMedia = async () => {
+MediaDevices.prototype.getDisplayMedia = async () => {
   const scale = 2;
   const canvas = document.createElement('canvas');
   canvas.width = innerWidth * scale;
@@ -533,6 +569,7 @@ navigator.mediaDevices.getDisplayMedia = async () => {
       const box = video.getBoundingClientRect();
       fill('rgb(30,120,60)', box.left, box.top, box.width, box.height);
       fill('rgb(200,40,40)', box.left + box.width / 4, box.top + box.height / 4, box.width / 2, box.height / 2);
+      if (window.pausedLook) fill('rgb(255,255,255)', box.left, box.top, box.width, box.height);
     }
     for (const mark of document.querySelectorAll('.capture-mark')) {
       if (getComputedStyle(mark).display === 'none') continue;
@@ -578,8 +615,49 @@ def test_with_one_click_pictures_on_analyse_takes_the_picture_of_the_video_itsel
     assert snapshot["frame_source"] == "video_capture"
     # The stored picture is the video area and nothing else: same shape, at the shared picture's resolution (or the size limit).
     assert snapshot["frame_width"] / snapshot["frame_height"] == pytest.approx(video_box["width"] / video_box["height"], rel=0.01)
-    assert snapshot["frame_width"] == pytest.approx(min(1920, video_box["width"] * 2), abs=3)
-    colours = page.evaluate("""async (address) => {
+    assert snapshot["frame_width"] == pytest.approx(min(1600, video_box["width"] * 2), abs=3)
+    colours = colours_of(page, snapshot["frame_image_url"])
+    green, red = pytest.approx([30, 120, 60], abs=14), pytest.approx([200, 40, 40], abs=14)  # JPEG shifts colours slightly
+    assert all(colour == green for colour in colours["edges"]), colours  # cropped right to the video's edges, no page around it
+    assert colours["middle"] == red
+    assert all(colour == green for colour in colours["outsideRed"]) and all(colour == red for colour in colours["insideRed"]), colours
+
+    # ── Paused with YouTube's own button: the picture is from before its buttons covered the video ──
+    # The test presses play and pause "inside" the player, as you would, by sending the player those messages itself.
+    page.evaluate("""() => {
+        document.querySelector('.viewer iframe').contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+    }""")
+    page.wait_for_timeout(1200)  # it plays for a moment: the app keeps its frames
+    page.evaluate("""() => {
+        window.pausedLook = true;  // from now on the shared picture shows the paused player's buttons over the video
+        document.querySelector('.viewer iframe').contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
+    }""")
+    page.wait_for_timeout(700)
+    page.get_by_role("button", name="Analyse this moment").click()
+    expect(page.locator(".frame-choice")).not_to_have_count(0)  # the frames of the last seconds, to choose from
+    expect(page.get_by_text("Sam Finisher (studied)")).to_be_visible()  # carried over from the moment before
+    page.get_by_role("button", name="Save observation").click()
+    expect(page.get_by_text(re.compile(r"Observation #2 saved"))).to_be_visible()
+    second = live_app.request("GET", "/api/observations/2")["snapshots"][0]
+    assert colours_of(page, second["frame_image_url"])["middle"] == red, "not the white of the paused player's buttons"
+
+    # ── Moved while paused, to look again: the frames kept from before the pause show another moment ──
+    page.evaluate("""() => {
+        document.querySelector('.viewer iframe').contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [30, true] }), '*');
+    }""")
+    expect(page.locator(".watch-clock")).to_have_text("at 0:30")
+    page.get_by_role("button", name="Analyse this moment").click()
+    expect(page.get_by_role("textbox", name="Video time")).to_have_value("0:30")
+    expect(page.locator(".frame-choice")).to_have_count(0)  # one fresh picture of what the player shows now
+    page.get_by_role("button", name="Save observation").click()
+    expect(page.get_by_text(re.compile(r"Observation #3 saved"))).to_be_visible()
+    third = live_app.request("GET", "/api/observations/3")["snapshots"][0]
+    assert colours_of(page, third["frame_image_url"])["middle"] == pytest.approx([255, 255, 255], abs=14), "as it is shown now"
+
+
+def colours_of(page, address: str) -> dict:
+    """Colours at a few places of a stored picture: its edges, its middle, and either side of the red block's edge."""
+    return page.evaluate("""async (address) => {
         const bitmap = await createImageBitmap(await (await fetch(address)).blob());
         const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
         const pen = canvas.getContext('2d');
@@ -587,8 +665,4 @@ def test_with_one_click_pictures_on_analyse_takes_the_picture_of_the_video_itsel
         const at = (x, y) => Array.from(pen.getImageData(Math.floor(bitmap.width * x), Math.floor(bitmap.height * y), 1, 1).data.slice(0, 3));
         return { edges: [at(0.5, 0.004), at(0.5, 0.996), at(0.003, 0.5), at(0.997, 0.5)], middle: at(0.5, 0.5),
                  outsideRed: [at(0.24, 0.5), at(0.5, 0.235)], insideRed: [at(0.26, 0.5), at(0.5, 0.265)] };
-    }""", snapshot["frame_image_url"])
-    green, red = pytest.approx([30, 120, 60], abs=14), pytest.approx([200, 40, 40], abs=14)  # JPEG shifts colours slightly
-    assert all(colour == green for colour in colours["edges"]), colours  # cropped right to the video's edges, no page around it
-    assert colours["middle"] == red
-    assert all(colour == green for colour in colours["outsideRed"]) and all(colour == red for colour in colours["insideRed"]), colours
+    }""", address)

@@ -8,8 +8,8 @@
 // throws a SecurityError. That is a deliberate privacy protection in every
 // browser, not a bug in this app, and this file never tries to get around it.
 // captureVideoFrame() reports it clearly so the page can offer what IS allowed:
-// a screenshot you take yourself (frameFromImageFile()), or a still the browser
-// shares with the page after asking you (see screen-capture.js).
+// a screenshot you take yourself (frameFromImageFile()), or a picture of the
+// screen the browser shares with the page after asking you (see screen-share.js).
 
 /** The longest side, in pixels, of a picture the app stores. Larger frames are scaled down. */
 const MAX_STORED_EDGE = 1920;

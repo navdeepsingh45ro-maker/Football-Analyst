@@ -1,48 +1,49 @@
-// Video analysis: watch, pause, analyse, annotate, save, continue watching.
+// Video analysis: watch the match and analyse it at the same time.
 //
 // THE THREE WAYS THIS PAGE OPENS
 //   video.html                      choose a match
-//   video.html?match=2&video=5      watch that match's video (add &t=612.5 to start at a moment)
-//   video.html?observation=7        reopen a saved observation to edit its drawing
+//   video.html?match=2&video=5      the desk for that match's video (add &t=612.5 to start at a moment)
+//   video.html?observation=7        change a saved observation, with its match beside it
 //
-// HOW THE TIMESTAMP IS HANDLED
-// When you press Analyse the video is paused and its position is read ONCE into
-// the form's "Video time" field. From then on that field is the only source of
-// the timestamp. Nothing reads the video again, so letting the video play on, or
-// seeking somewhere else, can never change the time of an observation by itself.
+// THE DESK
+// Two sides, both always in view:
 //
-// WHAT "ANALYSE" CAN AND CANNOT DO, BY KIND OF VIDEO (see backend/services/video_service.py)
-//   a video file on this computer   pause, read the time, capture the frame: all automatic
-//   a video file on the web         pause and read the time; the frame only if that website allows it
-//   YouTube                         pause and read the time, through YouTube's own messages (youtube-player.js).
-//                                   The picture: paste a screenshot, or switch on "one-click pictures", where the
-//                                   browser shares a still of this page with your permission (editor/screen-capture.js)
-//   any other link                  nothing automatic. You type the time and add a screenshot.
+//   ┌ the match ───────────────┐ ┃ ┌ the moment you are working on ┐
+//   │ the video, YouTube, or   │ ┃ │ the picture to draw on        │
+//   │ the match's own window   │ ┃ │ the pitch                     │
+//   │ [Analyse this moment]    │ ┃ │ what you saw         [Save]   │
+//   │ recorded in this match   │ ┃ └───────────────────────────────┘
+//   └──────────────────────────┘ ┃ <- drag the bar to give either side more room
+//
+// The video never goes away while you draw. Analyse pauses it (where the app can),
+// reads the time and puts the picture into the moment on the right. You can play,
+// rewind and watch on while you draw and write. Saving leaves the video where it is,
+// or starts it again with "Save and keep watching".
+//
+// The left side is one of the viewers in watch/viewers.js; the right side is the
+// draft in watch/moment-draft.js.
+//
+// KEYS, when you are not typing in a box
+//   A      Analyse this moment          K      play or pause
+//   J, L   back or forward 5 seconds    Cmd/Ctrl + S   save the observation (also while typing)
 
-import { api, ApiError, vocabulary } from '../api.js';
-import { observationFields, observationToForm } from '../components/observation-form.js';
+import { api, vocabulary } from '../api.js';
 import { observationTitle, openObservation } from '../components/observation-list.js';
-import { playerPicker } from '../components/player-picker.js';
 import { clear, h, queryParam } from '../dom.js';
-import { FrameCaptureError, captureVideoFrame, frameFromImageFile, imageFromTransfer } from '../editor/frame-capture.js';
-import { ScreenGrabber, screenCaptureSupported } from '../editor/screen-capture.js';
-import { createWorkspace } from '../editor/workspace.js';
-import { buildForm } from '../forms.js';
-import { formatClock, formatDate } from '../format.js';
+import { formatDate } from '../format.js';
 import { errorNote, load, mountPage } from '../layout.js';
-import { confirmDialog, emptyState, matchDate, scoreline, toast, videoClock } from '../ui.js';
-import { youtubePlayer } from '../youtube-player.js';
-
-const PITCH = { length: 105, width: 68 };
+import { choiceDialog, emptyState, matchDate, scoreline, videoClock } from '../ui.js';
+import { createDraft } from '../watch/moment-draft.js';
+import { fileViewer, noVideoViewer, windowViewer, youtubeViewer } from '../watch/viewers.js';
 
 const page = mountPage({
   active: 'video.html', title: 'Video analysis', wide: true,
-  lede: 'Watch, pause at an interesting moment, press Analyse, draw what you see, save, and carry on watching.',
+  lede: 'Watch on one side and analyse on the other: pause at a moment, press Analyse, draw and write, save, and carry on.',
 });
 
-let unsavedDrawing = false;
+let draft = null;
 window.addEventListener('beforeunload', (event) => {
-  if (unsavedDrawing) event.preventDefault();  // the browser then asks before leaving
+  if (draft && draft.unsaved()) event.preventDefault();  // the browser then asks before leaving
 });
 
 // ── Choosing a match ─────────────────────────────────────────────────────────
@@ -58,240 +59,297 @@ function showChooser() {
       h('ul', { class: 'list' }, matches.map((match) => h('li', { class: 'row spread' },
         h('div', {}, h('a', { class: 'title-link', href: `video.html?match=${match.id}` }, scoreline(match)),
           h('div', { class: 'small muted' }, matchDate(match.match_date),
-            match.video_count ? `, ${match.video_count} video${match.video_count === 1 ? '' : 's'} linked` : ', no video linked (manual workspace)',
+            match.video_count ? `, ${match.video_count} video${match.video_count === 1 ? '' : 's'} linked` : ', no video linked',
             `, ${match.observation_count} observation${match.observation_count === 1 ? '' : 's'}`)),
         h('a', { class: 'button small', href: `video.html?match=${match.id}` }, 'Open')))),
     ];
   });
 }
 
-// ── The analysis workspace ───────────────────────────────────────────────────
-/**
- * Build the analysis view: drawing surfaces on the left, the observation form on the right.
- *
- * @param options.frame     { dataUrl | url, width, height, source } or null when there is no picture yet
- * @param options.frameNote why there is no picture (e.g. capture was blocked), shown to the user
- * @param options.time      the captured video position in seconds, or null to type it
- * @param options.existing  an observation being edited (with `snapshot`, its diagram, or null)
- * @param options.onDone    called with the saved observation (or null when cancelled) and { resume }
- * @param options.canResume there is a video behind this that can be started again, so offer "Save and keep watching"
- */
-function buildAnalysis({ vocab, allPlayers, suggested, match, videoId, time, frame, frameNote, existing, snapshot, onDone, canResume = false }) {
-  let workspace = null;
-  let currentFrame = frame;
-  const surfaceHost = h('div', {});
+// ── The bar between the two sides ────────────────────────────────────────────
+const SPLIT_LIMITS = [26, 74];  // per cent of the desk the match side may take
 
-  // Players offered for linking a marker: the ones chosen for this observation first.
-  const picker = playerPicker({
-    all: allPlayers, suggested,
-    selected: existing ? existing.players.map((player) => player.id) : [],
-    onChange: () => workspace && workspace.controller.refresh(),
-  });
-  const linkable = () => {
-    const chosen = picker.players();
-    const rest = [...suggested, ...allPlayers].filter((player) => !chosen.some((other) => other.id === player.id));
-    return [...chosen, ...rest].filter((player, index, list) => list.findIndex((other) => other.id === player.id) === index);
+/** Drag (or use the arrow keys on) `handle` to share the desk's width between the two sides. Remembered per kind of viewer. */
+function splitDesk(desk, handle) {
+  let share = 54;
+  let key = null;
+  let usual = 54;
+  const apply = () => {
+    desk.style.setProperty('--watch', `${share}%`);
+    handle.setAttribute('aria-valuenow', String(Math.round(share)));
   };
-  const shirtNumberOf = (player) => (suggested.find((other) => other.id === player.id) || player).shirt_number;
-
-  const form = buildForm([
-    ...observationFields(vocab, { compact: true }),
-    { name: 'diagram_title', label: 'Title for the diagram', help: 'Optional', maxLength: 200 },
-  ], existing
-    ? { ...observationToForm(existing), diagram_title: snapshot ? snapshot.title : null }
-    : { category: 'Off-ball movement', video_time_seconds: time });
-
-  function mountWorkspace(shapes) {
-    if (workspace) workspace.destroy();
-    workspace = createWorkspace({
-      frame: currentFrame ? { url: currentFrame.dataUrl || currentFrame.url, width: currentFrame.width, height: currentFrame.height } : null,
-      pitch: snapshot ? { length: snapshot.pitch_length_m, width: snapshot.pitch_width_m } : PITCH,
-      shapes,
-      players: linkable,
-      zoneTypes: vocab.zone_types,
-      // A new "studied player" marker is linked to the studied player straight away.
-      defaultsFor: (kind) => {
-        const primary = picker.primaryPlayer();
-        if (kind !== 'subject' || !primary) return {};
-        const number = shirtNumberOf(primary);
-        return { player_id: primary.id, label: number ? String(number) : null };
-      },
-      confirmClear: () => confirmDialog({
-        title: 'Remove every shape?', message: 'You can still bring them back with Undo.', confirmLabel: 'Clear the drawing', danger: true,
-      }),
-    });
-    workspace.doc.onChange(() => { unsavedDrawing = true; });
-    // With no picture yet, the box for adding one comes first. Once there is a
-    // picture, replacing it is rare, so that box moves out of the way to the bottom.
-    clear(surfaceHost).append(...[
-      currentFrame ? null : pictureBox(),
-      workspace.element,
-      h('div', { class: 'panel-row' }, workspace.panels.properties, workspace.panels.measurements, workspace.panels.legend),
-      currentFrame ? pictureBox() : null,
-    ].filter(Boolean));
-  }
-
-  /** Use a screenshot as the picture to draw on. Shapes on the old picture would not fit the new one. */
-  async function usePicture(file) {
-    try {
-      const picture = await frameFromImageFile(file);
-      const frameShapes = workspace.doc.onLayer('frame').length;
-      if (frameShapes && !await confirmDialog({
-        title: 'Replace the picture?',
-        message: `The ${frameShapes} shape(s) drawn over the current picture will be removed, because they would not line up with a different picture. The pitch drawing is kept.`,
-        confirmLabel: 'Replace picture',
-      })) return;
-      currentFrame = { dataUrl: picture.dataUrl, width: picture.width, height: picture.height, source: 'upload' };
-      unsavedDrawing = true;
-      mountWorkspace(workspace.shapes().filter((shape) => shape.layer !== 'frame'));
-      toast('Picture added. Draw over it on the left.');
-    } catch (error) {
-      toast(error.message, 'error');
-    }
-  }
-
-  /** The box for adding (or replacing) the picture: choose a file, drop one, or paste. */
-  function pictureBox() {
-    const input = h('input', { type: 'file', accept: 'image/*', 'aria-label': 'Choose a screenshot',
-      onchange: () => { if (input.files[0]) usePicture(input.files[0]); } });
-    const box = h('div', { class: 'dropzone stack' },
-      currentFrame
-        ? h('div', { class: 'row small' }, h('span', {}, 'Wrong picture? Paste, drop or choose another one to draw on:'), input)
-        : [h('strong', {}, 'No picture of this moment yet'),
-          frameNote ? h('p', { class: 'small' }, frameNote) : null,
-          h('p', { class: 'small muted' }, 'Take a screenshot of the moment, then paste it here (Cmd/Ctrl + V), drop it on this box, '
-            + 'or choose the file. You can also skip the picture and rebuild the situation on the pitch.'),
-          input]);
-    box.addEventListener('dragover', (event) => { event.preventDefault(); box.classList.add('is-over'); });
-    box.addEventListener('dragleave', () => box.classList.remove('is-over'));
-    box.addEventListener('drop', (event) => {
-      event.preventDefault();
-      box.classList.remove('is-over');
-      const file = imageFromTransfer(event.dataTransfer);
-      if (file) usePicture(file);
-    });
-    return box;
-  }
-
-  const onPaste = (event) => {
-    const file = imageFromTransfer(event.clipboardData);
-    if (file) {
-      event.preventDefault();
-      usePicture(file);
-    }
+  const keep = () => {
+    try { localStorage.setItem(key, String(Math.round(share))); } catch { /* private browsing: not remembered */ }
   };
-  document.addEventListener('paste', onPaste);
+  const setShare = (value) => {
+    share = Math.min(SPLIT_LIMITS[1], Math.max(SPLIT_LIMITS[0], value));
+    apply();
+  };
 
-  function close(result, options = {}) {
-    document.removeEventListener('paste', onPaste);
-    if (workspace) workspace.destroy();
-    unsavedDrawing = false;
-    onDone(result, options);
-  }
-
-  const saveButton = h('button', { type: 'button', class: 'button primary', onclick: () => save() },
-    existing ? 'Save changes' : 'Save observation');
-  // One press instead of two: saves, returns to the video and starts it playing again.
-  const saveAndPlay = canResume
-    ? h('button', { type: 'button', class: 'button', onclick: () => save({ resume: true }) }, 'Save and keep watching') : null;
-
-  async function save({ resume = false } = {}) {
-    const { values, errors } = form.read();
-    if (Object.keys(errors).length) {
-      form.showErrors(errors);
-      return;
-    }
-    const { diagram_title: diagramTitle, ...fields } = values;
-    const who = picker.read();
-    if (!who.player_ids.length && !match) {
-      form.showErrors({ '': 'Choose at least one player this observation is about.' });
-      return;
-    }
-
-    const shapes = workspace.shapes();
-    const diagram = {
-      title: diagramTitle,
-      frame_width: currentFrame ? currentFrame.width : null,
-      frame_height: currentFrame ? currentFrame.height : null,
-      pitch_length_m: workspace.pitchSurface.space.length,
-      pitch_width_m: workspace.pitchSurface.space.width,
-      annotations: shapes,
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    desk.classList.add('is-resizing');  // a video frame under the pointer would otherwise swallow the drag
+    const box = desk.getBoundingClientRect();
+    // Where on the bar it was grabbed, so that the bar stays under the pointer while it moves.
+    const grabbed = event.clientX - (box.left + (box.width * share) / 100);
+    const move = (moved) => setShare(((moved.clientX - grabbed - box.left) / box.width) * 100);
+    const done = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', done);
+      handle.removeEventListener('pointercancel', done);
+      desk.classList.remove('is-resizing');
+      keep();
     };
-    if (currentFrame && currentFrame.dataUrl) {
-      // A picture that is not on the server yet. An unchanged saved picture is simply kept.
-      diagram.frame_image = currentFrame.dataUrl;
-      diagram.frame_source = currentFrame.source;
-    }
-    const hasDiagram = shapes.length > 0 || Boolean(currentFrame);
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', done);
+    handle.addEventListener('pointercancel', done);
+  });
+  handle.addEventListener('keydown', (event) => {
+    const step = { ArrowLeft: -2, ArrowRight: 2 }[event.key];
+    if (!step && event.key !== 'Home' && event.key !== 'End') return;
+    event.preventDefault();
+    if (step) setShare(share + step);
+    else setShare(event.key === 'Home' ? SPLIT_LIMITS[0] : SPLIT_LIMITS[1]);
+    keep();
+  });
+  handle.addEventListener('dblclick', () => {
+    setShare(usual);
+    keep();
+  });
 
-    saveButton.disabled = true;
-    if (saveAndPlay) saveAndPlay.disabled = true;
-    try {
-      let saved;
-      if (!existing) {
-        // One request: the observation, its players, the diagram and the picture are saved together or not at all.
-        saved = await api.post('/api/observations', {
-          ...fields, ...who, match_id: match ? match.id : null, video_reference_id: videoId ?? null,
-          snapshot: hasDiagram ? diagram : null,
-        });
-      } else {
-        saved = await api.put(`/api/observations/${existing.id}`, {
-          ...fields, ...who, match_id: existing.match ? existing.match.id : null,
-          video_reference_id: existing.video_reference_id,
-        });
-        if (snapshot) await api.put(`/api/snapshots/${snapshot.id}`, { ...diagram, notes: snapshot.notes });
-        else if (hasDiagram) await api.post(`/api/observations/${existing.id}/snapshots`, diagram);
-      }
-      toast(existing || resume ? `Observation #${saved.id} saved` : `Observation #${saved.id} saved. Press play to carry on.`);
-      close(saved, { resume });
-    } catch (error) {
-      if (!(error instanceof ApiError)) throw error;
-      const fieldErrors = error.fieldErrors;
-      form.showErrors(Object.keys(fieldErrors).length ? fieldErrors : { '': error.message });
-    } finally {
-      saveButton.disabled = false;
-      if (saveAndPlay) saveAndPlay.disabled = false;
-    }
-  }
-
-  async function cancel() {
-    if (unsavedDrawing && !await confirmDialog({
-      title: 'Leave without saving?', message: 'The drawing and anything typed here will be lost.', confirmLabel: 'Leave without saving', danger: true,
-    })) return;
-    close(null);
-  }
-
-  mountWorkspace(snapshot ? snapshot.annotations : []);
-  form.element.addEventListener('input', () => { unsavedDrawing = true; });
-
-  const heading = existing
-    ? `Editing observation #${existing.id}`
-    : (time === null ? 'Analysing a moment' : ['Analysing', videoClock(time)]);
-
-  return h('div', { class: 'stage', id: 'analysis' },
-    h('div', { class: 'stage-head' },
-      h('h2', {}, heading),
-      h('button', { type: 'button', class: 'button', onclick: cancel }, existing ? 'Close without saving' : 'Back to the video')),
-    h('div', { class: 'workspace' },
-      surfaceHost,
-      h('aside', {},
-        h('div', { class: 'panel stack' },
-          h('h3', {}, 'What you saw'),
-          picker.element, form.element,
-          h('div', { class: 'row' }, saveButton, saveAndPlay, h('button', { type: 'button', class: 'button', onclick: cancel }, 'Cancel'))))));
+  return {
+    /** Use the share remembered for this kind of viewer, or `fallback`. */
+    use(kind, fallback) {
+      key = `football.desk.${kind}`;
+      usual = fallback;
+      let remembered = null;
+      try { remembered = Number(localStorage.getItem(key)); } catch { /* not available */ }
+      setShare(remembered >= SPLIT_LIMITS[0] && remembered <= SPLIT_LIMITS[1] ? remembered : fallback);
+    },
+  };
 }
 
-// ── Watching a match ─────────────────────────────────────────────────────────
-function describeVideoError(video) {
-  const code = video.error ? video.error.code : 0;
-  const reason = {
-    1: 'Loading was interrupted.',
-    2: 'The file could not be read (a network or disk problem).',
-    3: 'The file is damaged or uses a format this browser cannot decode.',
-    4: 'This browser cannot play this file\'s format, or the file is not there any more.',
-  }[code] || 'The video could not be played.';
-  return `${reason} A match saved as .mp4 with H.264 video plays in every browser. You can still analyse this match `
-    + 'by typing the timestamp and adding a screenshot.';
+// ── The desk ─────────────────────────────────────────────────────────────────
+/**
+ * @param match      the match (with videos and appearances), or null for an observation without one
+ * @param video      the video to watch, or null
+ * @param seekTo     where to start the video, in seconds, or null
+ */
+function showDesk({ match, video, seekTo, vocab, allPlayers }) {
+  // The lineup, with the shirt number worn in THIS match when it was recorded.
+  const lineup = match ? match.appearances.map((appearance) => {
+    const player = allPlayers.find((candidate) => candidate.id === appearance.player.id) || appearance.player;
+    return { ...player, shirt_number: appearance.shirt_number || player.shirt_number };
+  }) : [];
+  const canPlayHere = Boolean(video && ['html5', 'embed'].includes(video.playback.mode));
+  let mode = canPlayHere || !video || video.playback.mode === 'none' ? 'here' : 'window';
+  let viewer = null;
+  let firstSeek = seekTo;
+
+  const viewerHost = h('div', {});
+  const below = h('div', { class: 'stack watch-below' });
+  const momentsBox = h('div', {});
+  const viewerSection = h('section', { class: 'desk-viewer stage', 'aria-label': 'The match' }, viewerHost, below);
+  const handle = h('div', {
+    class: 'desk-split', role: 'separator', tabindex: 0, 'aria-orientation': 'vertical',
+    'aria-label': 'Give the video or the drawing more room', 'aria-valuemin': SPLIT_LIMITS[0], 'aria-valuemax': SPLIT_LIMITS[1],
+    title: 'Drag to give the video or the drawing more room. Double-click to even it out again.',
+  }, h('span', {}));
+  // Shown at the bottom of the window when the real Analyse button has scrolled out of view.
+  const floating = h('button', { type: 'button', class: 'button primary analyse-float', onclick: () => analyse(), title: 'Keyboard: A' },
+    'Analyse this moment');
+  floating.hidden = true;
+
+  draft = createDraft({
+    vocab, allPlayers, suggested: lineup, match,
+    videoId: () => (video ? video.id : null),
+    canResume: () => Boolean(viewer && viewer.canResume),
+    onSaved: (_saved, { resume }) => {
+      refreshMoments();
+      if (resume && viewer) viewer.play();
+      revealDraft();  // the fresh moment starts at the top, where the picture will go
+    },
+  });
+
+  const desk = h('div', { class: 'desk' },
+    h('div', { class: 'desk-watch' }, viewerSection,
+      h('section', { class: 'desk-moments stage', 'aria-label': 'Recorded in this match' },
+        h('h3', {}, match ? 'Recorded in this match' : 'This observation'), momentsBox)),
+    handle, draft.element);
+  const split = splitDesk(desk, handle);
+  clear(page.content).append(desk, floating);
+
+  // ── The left side ──────────────────────────────────────────────────────────
+  function buildViewer() {
+    const options = { seekTo: firstSeek, onAnalyse: analyse };
+    firstSeek = null;
+    if (mode === 'window') return windowViewer(video, options);
+    if (canPlayHere && video.playback.mode === 'html5') return fileViewer(video, options);
+    if (canPlayHere) return youtubeViewer(video, options);
+    return noVideoViewer({ video, matchId: match ? match.id : null, onUseWindow: () => switchTo('window') });
+  }
+
+  function showViewer() {
+    if (viewer) viewer.destroy();
+    viewer = buildViewer();
+    clear(viewerHost).append(viewer.element);
+    viewerSection.classList.toggle('plays-here', mode === 'here' && canPlayHere);
+    split.use(mode === 'window' ? 'window' : 'here', mode === 'window' ? 38 : 54);
+
+    const keys = mode === 'window'
+      ? 'Keys here: A analyse, Cmd/Ctrl + S save. Pause the match in its own window.'
+      : 'Keys: A analyse, K play or pause, J and L back or forward 5 s, Cmd/Ctrl + S save.';
+    clear(below).append(...[
+      mode === 'here' && canPlayHere ? h('p', { class: 'small muted watch-explain' }, video.playback.explanation) : null,
+      h('p', { class: 'small muted keys' }, keys),
+      canPlayHere
+        ? h('div', { class: 'row' }, h('button', { type: 'button', class: 'button small quiet', onclick: () => switchTo(mode === 'window' ? 'here' : 'window') },
+          mode === 'window' ? 'Watch it here instead' : 'Watch it in another window instead'))
+        : null,
+    ].filter(Boolean));
+    draft.refreshButtons();
+    refreshMoments();
+    watchForBar();
+  }
+
+  function switchTo(next) {
+    mode = next;
+    showViewer();
+  }
+
+  // The floating button: only when the viewer's own Analyse button is out of sight.
+  let barWatch = null;
+  function watchForBar() {
+    if (barWatch) barWatch.disconnect();
+    floating.hidden = true;
+    const bar = viewerHost.querySelector('.watch-bar');
+    if (!bar || !('IntersectionObserver' in window)) return;
+    barWatch = new IntersectionObserver(([entry]) => { floating.hidden = entry.isIntersecting || bar.hidden; });
+    barWatch.observe(bar);
+  }
+
+  // ── Recorded in this match ─────────────────────────────────────────────────
+  /** A saved moment's time can be jumped to when it belongs to the video shown here. */
+  const jumpable = (observation) => viewer && viewer.canJump && observation.video_time_seconds !== null
+    && (observation.video_reference_id === null || (video && observation.video_reference_id === video.id));
+
+  function refreshMoments() {
+    if (!match) {
+      clear(momentsBox).append(h('p', { class: 'muted small' }, 'Not tied to a match.'));
+      return null;
+    }
+    return load(momentsBox, async () => {
+      const result = await api.get('/api/observations', { match_id: match.id, limit: 500 });
+      if (!result.items.length) return h('p', { class: 'muted small' }, 'Nothing recorded for this match yet.');
+      return h('ul', { class: 'list' }, result.items.map((observation) => h('li', { class: 'moment' },
+        h('div', { class: 'clocks' }, videoClock(observation.video_time_seconds, jumpable(observation)
+          ? { onclick: () => viewer.jumpTo(observation.video_time_seconds) } : {})),
+        h('div', { class: 'what' },
+          h('a', {
+            href: `observations.html?open=${observation.id}`,
+            onclick: (event) => {
+              event.preventDefault();
+              openObservation(observation.id, { onChanged: refreshMoments, onEditDrawing: editHere });
+            },
+          }, h('strong', {}, observationTitle(observation))),
+          h('div', { class: 'small muted' }, observation.players.map((entry) => entry.full_name).join(', ') || 'No player')))));
+    });
+  }
+
+  // ── Analyse, and work that would be lost ───────────────────────────────────
+  /**
+   * There is unsaved work in the moment on the right: save it, drop it, or keep working on it?
+   * Resolves to true when the way is clear. With `any`, notes and a pitch drawing made without
+   * pressing Analyse count too.
+   */
+  async function makeRoom({ any = false } = {}) {
+    if (any ? !draft.unsaved() : !draft.hasWork()) return true;
+    const choice = await choiceDialog({
+      title: 'Keep the moment you are working on?',
+      message: `You have not saved ${draft.workNote()} yet.`,
+      choices: [{ value: 'discard', label: 'Discard it', danger: true }, { value: 'save', label: 'Save it first', primary: true }],
+      cancelLabel: 'Keep working on it',
+    });
+    if (choice === 'save') return Boolean(await draft.save());
+    return choice === 'discard';
+  }
+
+  /** Put the moment's heading in view, below the video when the video stays at the top of a narrow window. */
+  function revealDraft() {
+    const sticky = getComputedStyle(viewerSection).position === 'sticky' && getComputedStyle(desk).display === 'flex';
+    const covered = sticky ? viewerSection.getBoundingClientRect().bottom : 0;
+    const top = draft.element.getBoundingClientRect().top;
+    if (top < covered || top > window.innerHeight * 0.75) window.scrollBy(0, top - covered - 8);
+  }
+
+  /** Forget the pictures of a moment that is not used after all. */
+  const forget = (moment) => {
+    for (const picture of moment.pictures || []) {
+      URL.revokeObjectURL(picture.url);
+      URL.revokeObjectURL(picture.thumb);
+    }
+  };
+
+  let analysing = false;
+  async function analyse() {
+    if (analysing || !viewer) return;
+    analysing = true;
+    try {
+      const moment = await viewer.analyse();  // the picture is taken now, before any question is asked
+      if (!moment) return;
+      if (draft.hasWork()) {
+        if (!await makeRoom()) {
+          forget(moment);
+          return;
+        }
+        draft.loadMoment(moment, { fresh: true });
+      } else {
+        draft.loadMoment(moment);  // a pitch drawing or notes made while watching stay with it
+      }
+      revealDraft();
+    } finally {
+      analysing = false;
+    }
+  }
+
+  /** "Edit drawing" from the list: change that observation on the right, without leaving the video. */
+  async function editHere(observation, snapshotId) {
+    if (!await makeRoom({ any: true })) return;
+    draft.loadExisting(observation, snapshotId);
+    revealDraft();
+  }
+
+  // ── Keys ───────────────────────────────────────────────────────────────────
+  document.addEventListener('keydown', (event) => {
+    if (document.querySelector('dialog[open]')) return;
+    const key = event.key.toLowerCase();
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && key === 's') {
+      event.preventDefault();  // instead of the browser's "save this page"
+      draft.save();
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const active = document.activeElement;
+    if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
+    const action = { a: analyse, k: () => viewer.togglePlay(), j: () => viewer.skip(-5), l: () => viewer.skip(5) }[key];
+    if (action) {
+      event.preventDefault();
+      action();
+    }
+  });
+
+  showViewer();
+  return { editHere };
+}
+
+// ── Opening the page ─────────────────────────────────────────────────────────
+function headFor(match) {
+  page.setTitle(match.title);
+  clear(page.heading).append(scoreline(match));
+  page.setLede([formatDate(match.match_date), match.competition && match.competition.name].filter(Boolean).join(', '));
+  clear(page.before).append(h('a', { class: 'back-link', href: `match.html?id=${match.id}` }, 'Match details'));
 }
 
 async function showMatch(matchId, wantedVideoId, seekTo) {
@@ -299,326 +357,41 @@ async function showMatch(matchId, wantedVideoId, seekTo) {
     api.get(`/api/matches/${matchId}`), vocabulary(), api.get('/api/players'),
   ]);
   const video = match.videos.find((candidate) => candidate.id === wantedVideoId) || match.videos[0] || null;
-  // The lineup, with the shirt number worn in THIS match when it was recorded.
-  const lineup = match.appearances.map((appearance) => ({
-    ...allPlayers.find((player) => player.id === appearance.player.id),
-    shirt_number: appearance.shirt_number || (allPlayers.find((player) => player.id === appearance.player.id) || {}).shirt_number,
-  }));
-
-  page.setTitle(match.title);
-  clear(page.heading).append(scoreline(match));
-  page.setLede([formatDate(match.match_date), match.competition && match.competition.name].filter(Boolean).join(', '));
-  clear(page.before).append(h('a', { class: 'back-link', href: `match.html?id=${match.id}` }, 'Match details'));
-
-  const watchStage = h('div', { class: 'stage' });
-  const analysisHost = h('div', {});
-  const momentsBox = h('div', {});
-  let player = null;  // the <video> element, when the app plays the video itself
-  let tube = null;  // the link to YouTube's player, when the video is shown in it
-  const jumpTo = (seconds) => {
-    if (player) player.currentTime = seconds;
-    else if (tube) tube.seek(seconds);
-  };
-
-  function refreshMoments() {
-    return load(momentsBox, async () => {
-      const result = await api.get('/api/observations', { match_id: match.id, limit: 500 });
-      if (!result.items.length) return h('p', { class: 'muted small' }, 'Nothing recorded for this match yet.');
-      return h('ul', { class: 'list' }, result.items.map((observation) => h('li', { class: 'moment' },
-        h('div', { class: 'clocks' }, videoClock(observation.video_time_seconds, (player || tube) && observation.video_time_seconds !== null
-          ? { onclick: () => jumpTo(observation.video_time_seconds) } : {})),
-        h('div', { class: 'what' },
-          h('a', { href: `observations.html?open=${observation.id}`,
-            onclick: (event) => { event.preventDefault(); openObservation(observation.id, { onChanged: refreshMoments }); } },
-          h('strong', {}, observationTitle(observation))),
-          h('div', { class: 'small muted' }, observation.players.map((entry) => entry.full_name).join(', ') || 'No player')))));
-    });
+  headFor(match);
+  showDesk({ match, video, seekTo, vocab, allPlayers });
+  if (match.videos.length > 1) {
+    page.actions.append(h('select', {
+      'aria-label': 'Video',
+      onchange: (event) => { window.location.href = `video.html?match=${match.id}&video=${event.target.value}`; },
+    }, match.videos.map((candidate) => h('option', { value: candidate.id, selected: video && candidate.id === video.id }, candidate.label))));
   }
-
-  function startAnalysis({ time, frame, frameNote }) {
-    watchStage.hidden = true;  // hidden, not removed: the video stays paused exactly where it was
-    clear(analysisHost).append(buildAnalysis({
-      vocab, allPlayers, suggested: lineup, match, videoId: video ? video.id : null, time, frame, frameNote,
-      existing: null, snapshot: null, canResume: Boolean(player || tube),
-      onDone: (saved, { resume = false } = {}) => {
-        clear(analysisHost);
-        watchStage.hidden = false;
-        if (saved) refreshMoments();
-        if (player) {
-          player.focus();
-          if (resume) player.play();
-        } else if (tube && resume) {
-          tube.play();
-        }
-      },
-    }));
-    analysisHost.scrollIntoView({ block: 'start' });
-  }
-
-  /** Pause, note the time, capture the frame, open the workspace. */
-  function analyseNow() {
-    player.pause();
-    const time = player.currentTime;  // read once; the form owns the timestamp from here on
-    try {
-      const shot = captureVideoFrame(player);
-      startAnalysis({ time, frame: { ...shot, source: 'video_capture' }, frameNote: null });
-    } catch (error) {
-      if (error instanceof FrameCaptureError && error.reason === 'blocked') {
-        startAnalysis({ time, frame: null, frameNote: error.message });
-      } else {
-        toast(error.message, 'error');
-      }
-    }
-  }
-
-  const manualButton = h('button', { type: 'button', class: 'button', onclick: () => startAnalysis({ time: null, frame: null, frameNote: null }) },
-    'Analyse a moment by hand');
-  const analyseKeyPressed = (event) => {
-    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
-    return event.key.toLowerCase() === 'a' && !typing && !watchStage.hidden && !event.metaKey && !event.ctrlKey
-      && !document.querySelector('dialog[open]');
-  };
-
-  /**
-   * A YouTube video. The app pauses it and reads its time through YouTube's own
-   * messages. The picture has to come from you: a pasted screenshot, or, with
-   * "one-click pictures" on, a still the browser shares with your permission.
-   */
-  function youTubeViewer() {
-    const address = new URL(video.playback.source_url);
-    address.searchParams.set('enablejsapi', '1');  // lets the player answer "pause" and report its time
-    address.searchParams.set('origin', window.location.origin);
-    address.searchParams.set('rel', '0');
-    address.searchParams.set('playsinline', '1');
-    if (seekTo !== null && Number.isFinite(seekTo)) address.searchParams.set('start', String(Math.floor(seekTo)));
-    const frame = h('iframe', { src: address.href, title: video.label, allowFullscreen: true, referrerPolicy: 'strict-origin-when-cross-origin',
-      allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture' });
-    tube = youtubePlayer(frame);
-
-    // The two small marks beside the video's corners let a shared picture of the screen be cropped to the video.
-    const marked = h('div', { class: 'capture-frame' }, h('div', { class: 'viewer' }, frame),
-      h('span', { class: 'capture-mark top-left', 'aria-hidden': 'true' }),
-      h('span', { class: 'capture-mark bottom-right', 'aria-hidden': 'true' }));
-    const grabber = screenCaptureSupported() ? new ScreenGrabber(marked) : null;
-
-    const clock = h('span', { class: 'tube-clock numeric' });
-    tube.onChange(() => { clock.textContent = tube.time === null ? '' : `at ${formatClock(tube.time)}`; });
-    const analyse = h('button', { type: 'button', class: 'button primary', onclick: () => analyseTube(),
-      title: 'Pause here and analyse this moment (keyboard: A)' }, 'Analyse this moment');
-    const oneClick = grabber ? h('button', { type: 'button', class: 'button', 'aria-pressed': 'false', onclick: () => toggleOneClick() },
-      'Turn on one-click pictures') : null;
-    const bar = h('div', { class: 'tube-bar' }, analyse, clock, h('span', { class: 'grow' }), oneClick);
-    const notice = h('p', { class: 'small', role: 'status' });
-    notice.hidden = true;
-    const say = (text) => {
-      notice.textContent = text;
-      notice.hidden = !text;
-    };
-    const pictureStep = h('div', { class: 'dropzone stack' });
-    pictureStep.hidden = true;
-    let useFile = null;  // set while the app is waiting for the picture of a paused moment
-
-    function syncOneClick() {
-      oneClick.textContent = grabber.active ? 'One-click pictures are on' : 'Turn on one-click pictures';
-      oneClick.setAttribute('aria-pressed', String(grabber.active));
-    }
-    if (grabber) grabber.onStop = syncOneClick;
-
-    async function toggleOneClick() {
-      if (grabber.active) {
-        grabber.stop();
-        say('');
-        return;
-      }
-      oneClick.disabled = true;
-      try {
-        await grabber.start();  // the browser asks what to share
-        await grabber.grab();  // a trial run: can the video be found in what was shared?
-        say('One-click pictures are on: Analyse now takes the picture for you. To switch it off, press the button again or stop sharing in the browser.');
-      } catch (error) {
-        grabber.stop();
-        say(error.message);
-      } finally {
-        oneClick.disabled = false;
-        syncOneClick();
-      }
-    }
-
-    /** The moment is paused and timed; now it needs its picture. Waits for a paste, a drop or a chosen file. */
-    function askForPicture(time) {
-      const finish = () => {
-        pictureStep.hidden = true;
-        bar.hidden = false;
-        useFile = null;
-        document.removeEventListener('paste', onPaste);
-      };
-      const open = (picture) => {
-        finish();
-        startAnalysis({ time, frame: picture, frameNote: null });
-      };
-      useFile = async (file) => {
-        try {
-          open({ ...await frameFromImageFile(file), source: 'upload' });
-        } catch (error) {
-          toast(error.message, 'error');
-        }
-      };
-      function onPaste(event) {
-        const file = imageFromTransfer(event.clipboardData);
-        if (file) {
-          event.preventDefault();
-          useFile(file);
-        }
-      }
-      const input = h('input', { type: 'file', accept: 'image/*', 'aria-label': 'Choose a screenshot',
-        onchange: () => { if (input.files[0]) useFile(input.files[0]); } });
-      const onMac = /Mac/i.test(navigator.userAgent);
-      clear(pictureStep).append(
-        h('strong', {}, time === null ? 'Paused. ' : ['Paused at ', videoClock(time), ' '], 'Now add the picture of this moment.'),
-        h('p', { class: 'small' }, onMac
-          ? 'Press Command + Control + Shift + 4, drag across the video above, then press Command + V.'
-          : 'Take a screenshot of the video above (on Windows: Windows key + Shift + S), then press Ctrl + V.',
-        ' You can also drop a picture on this box, or choose a file.'),
-        h('div', { class: 'row' }, input,
-          h('button', { type: 'button', class: 'button', onclick: () => open(null) }, 'Continue without a picture'),
-          h('button', { type: 'button', class: 'button', onclick: finish }, 'Back to watching')));
-      pictureStep.hidden = false;
-      bar.hidden = true;
-      document.addEventListener('paste', onPaste);
-    }
-    pictureStep.addEventListener('dragover', (event) => { event.preventDefault(); pictureStep.classList.add('is-over'); });
-    pictureStep.addEventListener('dragleave', () => pictureStep.classList.remove('is-over'));
-    pictureStep.addEventListener('drop', (event) => {
-      event.preventDefault();
-      pictureStep.classList.remove('is-over');
-      const file = imageFromTransfer(event.dataTransfer);
-      if (file && useFile) useFile(file);
-    });
-
-    /** Pause, note the time, take the picture if that is switched on, and open the workspace (or ask for the picture). */
-    async function analyseTube() {
-      if (!pictureStep.hidden || analyse.disabled) return;
-      analyse.disabled = true;
-      try {
-        let shot = null;
-        if (grabber && grabber.active) {
-          // Taken BEFORE pausing: a paused YouTube player covers the picture with its title and buttons.
-          try {
-            shot = await grabber.grab();
-          } catch (error) {
-            say(error.message);
-          }
-        }
-        const time = await tube.pause();  // read once; the form owns the timestamp from here on
-        if (shot) startAnalysis({ time, frame: { ...shot, source: 'video_capture' }, frameNote: null });
-        else askForPicture(time);
-      } finally {
-        analyse.disabled = false;
-      }
-    }
-    // The key works while this page has the keyboard. After a click inside the player, YouTube has it.
-    document.addEventListener('keydown', (event) => {
-      if (analyseKeyPressed(event)) {
-        event.preventDefault();
-        analyseTube();
-      }
-    });
-
-    manualButton.hidden = true;  // "Analyse this moment" does the same and more
-    return [marked, bar, notice, pictureStep];
-  }
-
-  let viewer;
-  if (video && video.playback.mode === 'html5') {
-    const analyseButton = h('button', {
-      type: 'button', class: 'analyse-button', onclick: analyseNow,
-      title: 'Pause here and analyse this moment (keyboard: A)',
-    }, 'Analyse');
-    player = h('video', { controls: true, preload: 'metadata', playsInline: true, src: video.playback.source_url });
-    const problem = h('div', { class: 'note error', role: 'alert' });
-    problem.hidden = true;
-    player.addEventListener('play', () => analyseButton.classList.add('is-playing'));
-    player.addEventListener('pause', () => analyseButton.classList.remove('is-playing'));
-    player.addEventListener('loadedmetadata', () => {
-      if (seekTo !== null && Number.isFinite(seekTo)) player.currentTime = Math.min(seekTo, player.duration || seekTo);
-    });
-    player.addEventListener('error', () => {
-      problem.textContent = describeVideoError(player);
-      problem.hidden = false;
-      analyseButton.hidden = true;
-    });
-    document.addEventListener('keydown', (event) => {
-      if (analyseKeyPressed(event)) {
-        event.preventDefault();
-        analyseNow();
-      }
-    });
-    viewer = [h('div', { class: 'viewer' }, player, analyseButton), problem];
-  } else if (video && video.playback.mode === 'embed') {
-    viewer = youTubeViewer();
-  } else {
-    viewer = h('div', { class: 'viewer fallback stack' },
-      h('h3', {}, video ? 'This video cannot be played inside the app' : 'No video is linked to this match'),
-      video && video.kind === 'external_link'
-        ? h('p', {}, h('a', { href: video.location, target: '_blank', rel: 'noopener noreferrer' }, 'Open the video in a new tab'))
-        : null,
-      h('p', { class: 'muted' }, 'You can still record what you see: watch it wherever it plays, then type the timestamp, '
-        + 'add a screenshot of the moment and draw on it.'),
-      video ? null : h('p', {}, h('a', { href: `match.html?id=${match.id}` }, 'Link a video to this match')));
-  }
-
-  const videoPicker = match.videos.length > 1
-    ? h('select', { 'aria-label': 'Video', onchange: (event) => { window.location.href = `video.html?match=${match.id}&video=${event.target.value}`; } },
-      match.videos.map((candidate) => h('option', { value: candidate.id, selected: video && candidate.id === video.id }, candidate.label)))
-    : null;
-
-  watchStage.append(h('div', { class: 'watch' },
-    h('div', { class: 'stack' },
-      viewer,
-      h('div', { class: 'row spread' },
-        h('p', { class: 'small muted prose' }, video ? video.playback.explanation : ''),
-        h('div', { class: 'row' }, videoPicker, manualButton))),
-    h('aside', { class: 'side-panel' }, h('h3', {}, 'Recorded in this match'), momentsBox)));
-
-  clear(page.content).append(watchStage, analysisHost);
-  refreshMoments();
 }
 
-// ── Editing a saved observation's drawing ────────────────────────────────────
+/** A saved observation, opened from elsewhere: change it on the right, with its video on the left. */
 async function showExisting(observationId, wantedSnapshotId) {
   const [observation, vocab, allPlayers] = await Promise.all([
     api.get(`/api/observations/${observationId}`), vocabulary(), api.get('/api/players'),
   ]);
-  const snapshot = observation.snapshots.find((candidate) => candidate.id === wantedSnapshotId) || observation.snapshots[0] || null;
   const match = observation.match ? await api.get(`/api/matches/${observation.match.id}`) : null;
-  const lineup = match ? match.appearances.map((appearance) => ({
-    ...allPlayers.find((player) => player.id === appearance.player.id), shirt_number: appearance.shirt_number,
-  })) : [];
-
-  page.setTitle(`Observation #${observation.id}`);
-  page.heading.textContent = match ? match.title : `Observation #${observation.id}`;
-  page.setLede(match ? formatDate(match.match_date) : null);
+  const ownVideo = match ? match.videos.find((candidate) => candidate.id === observation.video_reference_id) : null;
+  const video = ownVideo || (match ? match.videos[0] || null : null);
+  if (match) headFor(match);
+  else {
+    page.setTitle(`Observation #${observation.id}`);
+    page.heading.textContent = `Observation #${observation.id}`;
+    page.setLede(null);
+  }
   const backTo = document.referrer && new URL(document.referrer).origin === window.location.origin
     ? document.referrer : 'observations.html';
-
-  clear(page.content).append(buildAnalysis({
-    vocab, allPlayers, suggested: lineup, match, videoId: observation.video_reference_id,
-    time: observation.video_time_seconds,
-    frame: snapshot && snapshot.frame_width
-      ? { url: snapshot.frame_image_url, width: snapshot.frame_width, height: snapshot.frame_height, source: snapshot.frame_source }
-      : null,
-    frameNote: null,
-    existing: observation, snapshot,
-    onDone: () => { window.location.href = backTo; },
-  }));
+  showDesk({ match, video, seekTo: ownVideo ? observation.video_time_seconds : null, vocab, allPlayers });
+  draft.loadExisting(observation, wantedSnapshotId, { returnTo: () => { window.location.href = backTo; } });
 }
 
-// ── Start ────────────────────────────────────────────────────────────────────
 async function start() {
   const observationId = Number(queryParam('observation'));
   const matchId = Number(queryParam('match'));
   try {
-    if (observationId) await showExisting(observationId, Number(queryParam('snapshot')));
+    if (observationId) await showExisting(observationId, Number(queryParam('snapshot')) || null);
     else if (matchId) {
       const seek = queryParam('t');
       await showMatch(matchId, Number(queryParam('video')), seek === null ? null : Number(seek));

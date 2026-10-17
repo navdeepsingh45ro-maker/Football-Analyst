@@ -84,7 +84,9 @@ class VideoIn(InputSchema):
 class Playback(OutputSchema):
     """What the app can really do with a video. Storing a link is not the same as playing it."""
 
-    mode: Literal["html5", "embed", "none"]  # html5 = the app's own player; embed = someone else's player
+    # html5 = the app's own player; embed = someone else's player inside the app;
+    # window = played in a window of its own, beside the app; none = cannot be played as it is
+    mode: Literal["html5", "embed", "window", "none"]
     source_url: str | None  # what the player should load, when there is one
     available: bool  # False when a local file is missing right now
     can_read_time: bool  # can the app read the current position by itself

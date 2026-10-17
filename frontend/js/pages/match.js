@@ -24,8 +24,9 @@ const VIDEO_KINDS = {
 };
 const PLAYBACK = {
   html5: 'Plays in the app',
-  embed: 'Embedded player, timestamps typed by hand',
-  none: 'Reference only',
+  embed: 'Plays in YouTube\'s player inside the app',
+  window: 'Plays in its own window beside the app',
+  none: 'Cannot be played as it is',
 };
 
 function section(title, action, ...body) {
@@ -100,8 +101,9 @@ function videoDialog(match, existing = null) {
   return formDialog({
     title: existing ? 'Edit video' : 'Link a video to this match',
     intro: 'The app stores only WHERE the video is; it never copies it. A video file on this computer (.mp4, .mov, '
-      + '.webm) plays in the app and lets you capture frames. Anything else is kept as a reference, and you analyse '
-      + 'it by typing the timestamp and adding a screenshot.',
+      + '.webm) plays in the app and lets you capture frames. A YouTube link plays inside the app too. Any other link, '
+      + 'such as a match on a broadcaster\'s website, is watched in its own window beside the app, and Analyse takes '
+      + 'the picture from that window.',
     fields: [
       { name: 'location', label: 'File path or web link', required: true, maxLength: 1000,
         help: 'A full path such as /Users/you/Movies/match.mp4. In Finder: hold Option, right-click the file and choose "Copy as Pathname".' },
@@ -183,8 +185,9 @@ function show() {
         } }, 'Link a video'),
         match.videos.length
           ? h('ul', { class: 'list' }, match.videos.map((video) => videoRow(match, video)))
-          : emptyState('No video linked. Without one you can still analyse this match by typing timestamps and adding screenshots.',
-            h('a', { class: 'button', href: `video.html?match=${match.id}` }, 'Open the manual workspace'))),
+          : emptyState('No video linked. You can still analyse this match: watch it in any window and connect that window, '
+            + 'or type timestamps and add screenshots.',
+            h('a', { class: 'button', href: `video.html?match=${match.id}` }, 'Open the analysis desk'))),
 
       section('Lineups',
         h('button', { type: 'button', class: 'button', onclick: async () => {

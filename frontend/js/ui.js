@@ -57,6 +57,28 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', danger
 }
 
 /**
+ * Ask which of several things to do. Resolves to the chosen `value`, or null for the cancel button or Esc.
+ *   await choiceDialog({ title: 'Keep it?', message: '...', choices: [{ value: 'save', label: 'Save it', primary: true }] })
+ */
+export function choiceDialog({ title, message, choices, cancelLabel = 'Cancel' }) {
+  return new Promise((resolve) => {
+    const dialog = h('dialog', {},
+      h('div', { class: 'dialog-body' },
+        h('div', { class: 'dialog-head' }, h('h2', {}, title)),
+        h('div', { class: 'dialog-content' }, typeof message === 'string' ? h('p', {}, message) : message),
+        h('div', { class: 'dialog-foot' },
+          h('button', { type: 'button', class: 'button', onclick: () => dialog.close('cancel') }, cancelLabel),
+          choices.map((choice) => h('button', {
+            type: 'button',
+            class: ['button', choice.danger ? 'danger' : null, choice.primary ? 'primary' : null].filter(Boolean).join(' '),
+            onclick: () => dialog.close(choice.value),
+          }, choice.label)))));
+    dialog.addEventListener('close', () => resolve(choices.some((choice) => choice.value === dialog.returnValue) ? dialog.returnValue : null));
+    openDialog(dialog);
+  });
+}
+
+/**
  * A dialog holding a form (see forms.js).
  *
  *   const saved = await formDialog({

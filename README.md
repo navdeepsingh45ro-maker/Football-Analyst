@@ -1,7 +1,8 @@
 # Football Analyst & Coach
 
 A personal workspace for studying football: a player database, a match library,
-paused-video tactical analysis with drawing tools, a top-down tactical pitch,
+an analysis desk where you watch a match and draw and write about it at the same
+time (from a video file, YouTube, or any website), a top-down tactical pitch,
 searchable observations, pattern reports across matches, and a coaching notebook.
 
 It runs entirely on your own computer. Your data is one folder. Nothing is sent
@@ -32,48 +33,84 @@ API. The first start creates `backend/data/` with an empty database.
    empty is stored as "not known", never as a guess or a zero. To save typing,
    **Fill in from the web** at the top of the form looks the player up and fills
    in the empty boxes for you to check (see "Filling in a player from the web").
-2. **Matches** → add a match, then **Link a video**. A video file on this
-   computer (`.mp4`, `.mov`, `.webm`) plays inside the app. Add the players to
-   the lineup so they are one click away later.
-3. **Video analysis** → open the match and watch. Pause anywhere and press
-   **Analyse** (or the `A` key). The app pauses the video, records the exact
-   time, and captures the frame.
-4. Draw over the frame, rebuild the situation on the pitch beside it, say who
-   it is about and what you saw, and **Save observation**. You are returned to
-   the video, still paused at the same moment. Press play and carry on.
+2. **Matches** → add a match, then **Link a video**: a video file on this
+   computer (`.mp4`, `.mov`, `.webm`), a YouTube link, or a link to any other
+   website, such as a broadcaster's page. Add the players to the lineup so they
+   are one click away later.
+3. **Video analysis** → open the match. The match is on the left, and the moment
+   you are working on is on the right, both always in view. Watch; when something
+   happens, pause and press **Analyse this moment** (or the `A` key). The time and
+   the picture go into the moment on the right, and the video stays where it is.
+4. Draw over the picture, rebuild the situation on the pitch, say who it is about
+   and what you saw, and **Save observation** (or Cmd + S). You can play, rewind
+   and watch on while you do. After saving, a fresh moment is ready beside the
+   video; the players and the kind of observation carry over. **Save and keep
+   watching** also starts the video again.
 5. Find it again from the player's profile (**Observations**, **Diagrams**),
    the match, the **Observations** page, or the **Reports** page.
 6. Optional: ask the **Coach** (an AI) about what you have recorded. See
    "Optional AI" below.
 
-### What "Analyse" can do depends on the video
+### What "Analyse this moment" can do depends on the video
 
-| The video is… | Plays in the app | Time read automatically | Frame captured |
+| The video is… | Where it plays | Time read automatically | Picture taken |
 |---|---|---|---|
-| a file on this computer | yes | yes | yes |
-| a direct link to a video file on the web | if that site allows it | yes | only if that site permits it |
-| YouTube | in YouTube's own player | yes | as a screenshot: pasted, or taken for you |
-| any other link | no, opens in a new tab | no, you type it | no |
+| a file on this computer | in the app | yes | yes, the exact frame |
+| a direct link to a video file on the web | in the app, if that site allows it | yes | only if that site permits it |
+| YouTube | in YouTube's own player, in the app | yes | with one-click pictures on, or a pasted screenshot |
+| any other website, or a video app | in its own window, beside the app | no, you type it | yes, once that window is connected |
+
+Whatever the video, the moment on the right also works by hand: type the time,
+and paste (Cmd + V), drop or choose a screenshot to draw on.
+
+**Keys** (when you are not typing in a box): `A` analyse this moment, `K` play or
+pause, `J` and `L` back or forward 5 seconds, Cmd + S save. Pressing Analyse again
+while the moment on the right has unsaved work asks first: save it, or discard it.
+
+**Drag the bar** between the two sides to give the video or the drawing more room;
+the app remembers it. In a narrow window the two sides are stacked, and a video
+playing in the app stays at the top, smaller, while you draw below it.
 
 **YouTube.** Press **Analyse this moment** under the player. The app pauses the
-video and reads its time through YouTube's own player messages. It then asks for
-the picture: take a screenshot of the paused video and paste it (on a Mac:
-Command + Control + Shift + 4, drag across the video, Command + V), or carry on
-without one and use the pitch.
+video and reads its time through YouTube's own player messages. For the picture,
+press **Turn on one-click pictures** once: the browser asks what you want to share;
+choose this browser window or the screen it is on. From then on the app keeps the
+last couple of seconds of the video area, so Analyse brings in a picture without
+YouTube's pause buttons on it, even when you paused with YouTube's own button. Two
+small coloured marks beside the video show that sharing is on. It is the same as a
+screenshot, taken with your permission; the app never reads the picture out of
+YouTube's player, which browsers forbid. Without one-click pictures, take a
+screenshot and paste it (on a Mac: Command + Control + Shift + 4, drag across the
+video, Command + V).
 
-**One-click pictures** remove that step. Press **Turn on one-click pictures**;
-the browser asks what you want to share; choose this browser window or the
-screen it is on. From then on Analyse takes a still of the video area by itself,
-before pausing, so YouTube's pause buttons are not in the picture. Two small
-coloured marks beside the video show that sharing is on. It is the same as a
-screenshot, taken with your permission. The app still never reads the picture
-out of YouTube's player, which browsers forbid.
+**Any website, or any app: the match in its own window.** For a link to any other
+site (a broadcaster's page, a streaming site) the match plays on that site, in a
+window of its own:
 
-**Save and keep watching** saves the observation and starts the video again in
-one press, for files and YouTube alike.
+1. Press **Open the match link** (or open the match yourself in any browser window,
+   or in a video app such as QuickTime Player, which also plays files the browser
+   cannot).
+2. Press **Connect the match window**, and when the browser asks what to share,
+   choose that window (or the whole screen).
+3. Put the two windows side by side: drag one to the left edge of the screen and
+   the other to the right edge, or use the Window menu, Move & Resize.
+4. Watch there. When something happens, pause it there, then press **Analyse this
+   moment** in the app.
 
-For everything in the "no" columns there is a manual path: **Analyse a moment
-by hand**, type the timestamp, and paste, drop or choose a screenshot to draw on.
+The app finds the video in the shared window by itself, by its movement (a web page
+stands still; a match never does), and follows it if you scroll that page. It keeps
+the last couple of seconds of it in memory and notices when you pause. Analyse then
+brings in the frame from just before the pause, so the player's pause symbol and
+buttons are not on it, and shows a row of the frames from those seconds in case
+another one is clearer. If it picks the wrong part of the window, press **Mark the
+video by hand** and drag across the video. The app cannot read that player's time,
+so type it from the player if you want to find the moment again.
+
+The picture is only ever what you could see on your screen, taken with your
+permission. Nothing is recorded or sent anywhere: the last seconds are kept in
+memory and replaced, and only the picture you save is stored. A protected stream
+(many paid services) shows as black when shared, and a player switched to full
+screen leaves the window; make the window bigger instead.
 
 ## Where things are
 
@@ -99,6 +136,7 @@ Football_Analyst/
 │       ├── pages/           one script per page
 │       ├── components/      forms and lists shared by several pages
 │       ├── editor/          the drawing tools                ← the heart of the app
+│       ├── watch/           watching a match and taking its pictures (the analysis desk)
 │       ├── api.js  dom.js  forms.js  ui.js  layout.js  format.js  charts.js
 │       └── …
 ├── test_fixtures/           worked geometry examples shared by Python and JavaScript tests
@@ -114,6 +152,8 @@ Football_Analyst/
 | a validation rule | `backend/schemas/` |
 | what gets deleted along with what | `backend/services/deletion_service.py` |
 | how a shape is drawn, or its colours | `frontend/js/editor/render.js` |
+| how the video is found in a shared window, or how a pause is told | `frontend/js/watch/find-video.js` |
+| what Analyse this moment does for each kind of video | `frontend/js/watch/viewers.js` |
 | what a click or key press does in the editor | `frontend/js/editor/controller.js` |
 | a distance or angle calculation | `backend/services/geometry.py` **and** `frontend/js/editor/geometry.js`, plus the shared examples in `test_fixtures/` |
 | a report | `backend/services/analytics_service.py` |
@@ -292,20 +332,32 @@ What it does and does not do:
 ## What it deliberately does not do
 
 - No login. It listens on `127.0.0.1` only. Do not expose it to a network as it is.
-- No automatic tracking or computer vision. You place markers; measurements are
-  estimates from where you placed them.
-- No downloading, converting or unlocking of video.
+- No automatic tracking of players or the ball. You place markers; measurements
+  are estimates from where you placed them. The only looking at pictures the app
+  does is finding where the video is in a shared window and noticing when it
+  stands still.
+- No downloading, converting, recording or unlocking of video.
 - No paid data service, and no copying from sites that forbid it. A player's
   details can be looked up on Wikidata when you ask; every other fact is one you
   entered or imported.
 
 ## Known limits
 
-- One-click pictures depend on the browser being able to share the screen with
-  a page. The cropping is tested with a stand-in for that shared picture, not
-  with a person pressing Allow in each browser.
-- After a click inside YouTube's player, the keyboard belongs to YouTube, so the
-  `A` shortcut only works again once you click somewhere on the app's page.
+- One-click pictures and the match in its own window depend on the browser being
+  able to share a window or the screen with a page. Finding the video, telling a
+  pause and choosing the frame are tested with painted stand-ins for that shared
+  picture, in Chrome's and Safari's engines, not with a person pressing Allow in a
+  real browser.
+- Finding the video by its movement needs the match to be playing for a few
+  seconds. With the camera standing still and little moving, it can take an
+  animated advert beside the video in with it, until the camera moves; you can
+  always mark the video by hand.
+- The frame offered after a pause is the one from about half a second before the
+  picture stood still. If you moved the mouse over the player before pausing, its
+  buttons may be on that frame too; choose an earlier one from the row of frames.
+- After a click inside YouTube's player, or in the match's own window, the
+  keyboard belongs to that player, so the `A` key only works again once you click
+  somewhere on the app's page.
 - A highlighted space is a rectangle.
 - CSV import only adds records; it never updates existing ones.
 - The JSON export does not contain frame pictures (the backup does).

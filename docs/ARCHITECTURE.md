@@ -25,8 +25,8 @@ its frames may be captured.
 
 **One request, start to finish** (saving an observation with a diagram):
 
-1. `js/pages/video.js` collects the form and the shapes and calls
-   `api.post('/api/observations', body)`.
+1. `js/watch/moment-draft.js` (the right-hand side of the analysis desk)
+   collects the form and the shapes and calls `api.post('/api/observations', body)`.
 2. FastAPI checks `body` against `ObservationCreate` in
    `schemas/observation_schema.py`. A wrong value stops here with a 422 that
    names the field.
@@ -36,7 +36,7 @@ its frames may be captured.
    shapes and the frame picture inside `saving_files(db)`: one commit, or a
    rollback that also deletes the picture.
 5. The route returns the saved record as JSON; the page shows a confirmation
-   and goes back to the paused video.
+   and starts a fresh moment beside the video, which never went away.
 
 ## 2. The data model
 
@@ -142,6 +142,59 @@ Change flows one way: the controller calls a method on the model; the model
 notifies; surfaces redraw and panels refresh from the model. Nothing edits the
 SVG directly, so undo and redo cover every change.
 
+## 4b. The analysis desk: watching and analysing at once
+
+`video.html` is two sides that are always in view: the match on the left, the
+moment you are working on on the right, and a bar between them to share the width.
+
+```
+ js/pages/video.js          the page: which match, the two sides, the bar, the keys,
+                            "recorded in this match", and what Analyse this moment does
+ js/watch/viewers.js        the left side, one viewer per way of watching. They all offer
+                            the same few things (analyse, play, skip, jump to a time)
+     fileViewer             a video file the app plays itself: exact time, exact frame
+     youtubeViewer          YouTube's player, through youtube-player.js
+     windowViewer           a match in another window, through screen-share.js
+ js/watch/moment-draft.js   the right side: picture, pitch, notes, save
+ js/watch/screen-share.js   sharing a window or the screen, and keeping its last seconds
+ js/watch/find-video.js     where the video is in a shared picture, and when it is paused (pure)
+ js/watch/frame-capture.js  a frame from a <video>, or from a picture you supply
+```
+
+**One press, start to finish.** Analyse this moment asks the viewer for a *moment*:
+`{ time, frame or pictures, note, videoId }`. A file viewer pauses the `<video>` and
+copies its frame. A YouTube viewer pauses the player by message and reads the time it
+stopped at. A window viewer can neither pause nor read the time; it offers the frames
+it kept. The page hands the moment to the draft, after asking what to do with unsaved
+work there, and the draft fills in the time, the picture and the row of frames to choose
+from. Nothing is read from the video again after that, so watching on cannot change the
+moment.
+
+**Why another window, and how its video is found.** A page cannot show most websites
+inside itself (they forbid being framed) and may never read pixels from another site's
+player. What a browser does allow, with your permission, is sharing a window or the
+screen with a page. `MatchWindow` takes a small grey copy of the shared picture five
+times a second. `find-video.js` compares each copy with the one before: a web page does
+not change, a football match changes all over. The largest area that keeps changing is
+the video (`movingArea`); it is used once it has been seen in the same place twice in a
+row, and followed when it moves. Inside it, `motionKind` tells a playing match (changes
+across the picture) from a paused one (nothing, or only one place or band: the player's
+buttons fading in, the mouse). `PauseWatch` needs three looks in a row before it changes
+its answer.
+
+**Why the last seconds are kept.** A paused player covers the picture with its own
+buttons, and by the time you press Analyse the pause has already happened. So
+`FrameRing` keeps copies of the video area from the last few seconds, and stops adding
+to them while the video is paused. `chooseFrames` then offers those frames and picks
+the one from about half a second before the picture stood still; for the app's own
+YouTube player, where the player says exactly when it paused, from just before that,
+and from before the mouse went over the player. The same idea serves both: one-click
+pictures find the YouTube player by two marks beside its corners instead of by movement
+(`OwnPlayerPictures`), because there the page knows exactly where the player is.
+
+Only the picture you save leaves memory: frames are canvases that are reused, and the
+offered pictures are blobs in memory, released when the moment is saved or dropped.
+
 ## 5. Decisions, and the reasons
 
 **FastAPI + SQLAlchemy + Alembic + SQLite, plain HTML/JS frontend.** The folder
@@ -194,6 +247,13 @@ it does not; general coaching advice is a separate, labelled kind. The
 conversation lives in the page: each request carries the last few turns, and
 the server stores nothing.
 
+**Watching another window is permission, not access.** The app never loads another
+site's page into itself and never reads another site's player. It sees exactly what
+the browser shares after you choose the window, keeps a few seconds of it in memory,
+and stores only the picture you save, as an ordinary frame (`frame_source` is
+`video_capture`, the same as a frame copied from a file). Stopping the sharing in the
+browser, or leaving the page, stops it completely.
+
 **Security posture: a local, single-user tool.** No accounts. The server binds
 to localhost and rejects other `Host` headers. A strict Content-Security-Policy
 allows scripts and styles only from the app itself, and pages build their HTML
@@ -215,4 +275,5 @@ registered as match videos, with a video extension, are ever streamed.
 | I | filters and summaries return the expected records | `tests/test_observations.py`, `tests/test_analytics.py` |
 | J | export, validate, re-import | `tests/test_transfer_and_backup.py` |
 | K | invalid input, unplayable video, no AI, failed save | `tests/test_snapshots.py`, `tests/test_ai.py`, `tests/browser/` |
-| L | the whole workflow in a browser | `tests/browser/test_analysis_workflow.py` |
+| L | the whole workflow in a browser, with the video in view beside the drawing | `tests/browser/test_analysis_workflow.py` |
+| M | a match in its own window: the video found, a pause noticed, a clean frame chosen; the keys; the bar | `tests/browser/test_watch_and_analyse.py`, `frontend/tests/find-video.test.js` |

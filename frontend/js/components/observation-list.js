@@ -50,8 +50,12 @@ function fact(label, value) {
   return value === null || value === undefined || value === '' ? [] : [h('dt', {}, label), h('dd', { class: 'prose' }, value)];
 }
 
-/** The full record of one observation, with its diagrams and everything that can be done with it. */
-export async function openObservation(observationId, { onChanged = () => {} } = {}) {
+/**
+ * The full record of one observation, with its diagrams and everything that can be done with it.
+ * `onEditDrawing(observation, snapshotId)`, when given, opens a drawing for changing on the same page
+ * (the analysis desk does this); without it, "Edit drawing" goes to the Video analysis page.
+ */
+export async function openObservation(observationId, { onChanged = () => {}, onEditDrawing = null } = {}) {
   let observation;
   try {
     observation = await api.get(`/api/observations/${observationId}`);
@@ -59,6 +63,12 @@ export async function openObservation(observationId, { onChanged = () => {} } = 
     toast(error.message, 'error');
     return;
   }
+
+  let dialog = null;
+  /** "Edit drawing" and "Draw a diagram for it": a link to the analysis page, or the same page's own way of doing it. */
+  const drawingButton = (label, snapshotId) => (onEditDrawing
+    ? h('button', { type: 'button', class: 'button small', onclick: () => { dialog.close(); onEditDrawing(observation, snapshotId); } }, label)
+    : h('a', { class: 'button small', href: `video.html?observation=${observation.id}${snapshotId ? `&snapshot=${snapshotId}` : ''}` }, label));
 
   const diagrams = observation.snapshots.map((snapshot) => {
     const view = renderSnapshot(snapshot);
@@ -72,11 +82,10 @@ export async function openObservation(observationId, { onChanged = () => {} } = 
       h('div', { class: 'row' }, downloads,
         h('a', { class: 'button small', href: `/api/snapshots/${snapshot.id}`, target: '_blank', rel: 'noopener',
           title: 'Every shape with its coordinates: metres on the pitch, fractions of the frame on the picture' }, 'Diagram data'),
-        h('a', { class: 'button small', href: `video.html?observation=${observation.id}&snapshot=${snapshot.id}` }, 'Edit drawing')));
+        drawingButton('Edit drawing', snapshot.id)));
   });
 
-  let dialog = null;
-  const reopen = () => { dialog.close(); onChanged(); openObservation(observationId, { onChanged }); };
+  const reopen = () => { dialog.close(); onChanged(); openObservation(observationId, { onChanged, onEditDrawing }); };
 
   const edit = h('button', { type: 'button', class: 'button', onclick: async () => {
     if (await observationDialog(observation)) reopen();
@@ -124,7 +133,7 @@ export async function openObservation(observationId, { onChanged = () => {} } = 
     h('div', { class: 'row no-print' },
       h('a', { class: 'button small', href: `notebook.html?from_observation=${observation.id}&as=note` }, 'Turn into a coaching note'),
       h('a', { class: 'button small', href: `notebook.html?from_observation=${observation.id}&as=idea` }, 'Turn into a training idea'),
-      diagrams.length ? null : h('a', { class: 'button small', href: `video.html?observation=${observation.id}` }, 'Draw a diagram for it')));
+      diagrams.length ? null : drawingButton('Draw a diagram for it', null)));
 
   dialog = infoDialog({ title: `Observation #${observation.id}`, content, wide: true, actions: [remove, edit] });
 }

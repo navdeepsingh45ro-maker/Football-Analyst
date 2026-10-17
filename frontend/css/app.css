@@ -404,26 +404,11 @@ dialog form, dialog .dialog-body { display: flex; flex-direction: column; max-he
 .stage .field .error { color: #ffb4ae; }
 .stage .note { color: var(--ink); }
 
-.watch { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
 .viewer { position: relative; background: #000; border-radius: 8px; overflow: hidden; }
 .viewer video, .viewer iframe { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; background: #000; }
 .viewer.fallback { background: var(--navy-2); padding: 28px 24px; }
 
-/* The floating Analyse button sits at the TOP of the picture, away from the
-   video's own controls at the bottom, so neither gets in the other's way. */
-.analyse-button {
-  position: absolute; top: 12px; right: 12px; z-index: 3;
-  min-height: 42px; padding: 8px 18px; border-radius: 999px; border: 2px solid var(--navy);
-  background: var(--card-yellow); color: var(--navy);
-  font-family: var(--font-cond); font-weight: 700; font-size: 1.125rem; cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-}
-.analyse-button:hover { background: #ffd53d; }
-.analyse-button.is-playing { opacity: 0.72; }
-.analyse-button.is-playing:hover, .analyse-button.is-playing:focus-visible { opacity: 1; }
-
-.side-panel { background: var(--navy-2); border-radius: 8px; padding: 12px 14px; }
-.side-panel .list > li { border-bottom-color: var(--navy-3); }
+.stage .list > li { border-bottom-color: var(--navy-3); }
 .moment { display: flex; gap: 12px; align-items: flex-start; }
 .moment .clocks { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; flex: none; min-width: 64px; }
 .moment .what { min-width: 0; }
@@ -440,7 +425,7 @@ dialog form, dialog .dialog-body { display: flex; flex-direction: column; max-he
 .view-switch .button[aria-pressed="true"] { background: var(--paper); color: var(--navy); border-color: var(--card-yellow); }
 .editor .hint { flex: 1; min-width: 240px; }
 .surface-title { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px; font-size: 0.875rem; color: #b3bfd1; }
-.surface-title strong { color: var(--paper); font-family: var(--font-cond); font-size: 1.125rem; font-weight: 600; }
+.surface-title strong { color: var(--paper); font-family: var(--font-cond); font-size: 1.125rem; font-weight: 600; white-space: nowrap; }
 
 /* A drawing surface keeps EXACTLY the shape of what it shows (set from JS as an
    aspect-ratio), so the SVG drawn on top always lines up with the picture. */
@@ -501,12 +486,68 @@ dialog form, dialog .dialog-body { display: flex; flex-direction: column; max-he
 .diagram-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); padding: 12px; }
 .diagram-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); gap: 16px; }
 
-/* ── A YouTube video: the bar under it, and the marks used by one-click pictures ── */
-.tube-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
-.tube-bar .grow { flex: 1; }
-.tube-clock { color: var(--paper); font-size: 1.125rem; }
-/* Room above and below the video for the two marks. Their size, colours and position are what
-   js/editor/screen-capture.js looks for in a shared picture of the screen: change both together. */
+/* ── The analysis desk (Video analysis): the match on the left, the moment on the right ──
+   Both sides are always in view. The match side stays put while the page scrolls, and the
+   bar between them shares out the width (--watch is set by js/pages/video.js). */
+.desk { --watch: 54%; display: grid; grid-template-columns: minmax(0, var(--watch)) 18px minmax(0, 1fr); align-items: start; }
+/* At most as tall as fits between its place 12px from the top and the end of the page (the page's
+   64px bottom padding): any taller, and at the end of the page the bottom of the desk would push
+   it up, and the top of the video out of view. */
+.desk-watch {
+  position: sticky; top: 12px; max-height: calc(100vh - 76px); overflow-y: auto; scrollbar-width: thin;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.desk-split { align-self: stretch; display: flex; justify-content: center; cursor: col-resize; touch-action: none; }
+.desk-split > span { position: sticky; top: calc(50vh - 32px); width: 6px; height: 64px; border-radius: 3px; background: #aab3bd; }
+.desk-split:hover > span, .desk-split:focus-visible > span, .desk.is-resizing .desk-split > span { background: var(--navy); }
+.desk.is-resizing iframe, .desk.is-resizing video { pointer-events: none; }
+.desk.is-resizing { cursor: col-resize; user-select: none; }
+.desk-work { min-width: 0; }
+.draft-head { margin-bottom: 10px; }
+.draft-head h2 { display: flex; align-items: center; gap: 10px; }
+.draft-head p { margin: 6px 0 0; }
+.draft-notes { margin-top: 12px; }
+
+/* The bar under every viewer: Analyse, the time, back and forward. */
+.watch-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+.watch-bar .grow { flex: 1; }
+.watch-clock { color: var(--paper); font-size: 1.125rem; }
+.watch-notice { margin: 8px 0 0; }
+.watch-below { margin-top: 10px; }
+.watch-below p { margin: 0; }
+.stage .button.analyse { min-height: 40px; padding-inline: 18px; font-family: var(--font-cond); font-size: 1.0625rem; font-weight: 700; }
+.analyse-float { position: fixed; left: 18px; bottom: 18px; z-index: 40; box-shadow: 0 6px 20px rgba(22, 38, 63, 0.4); }
+.button.primary.analyse-float { background: var(--card-yellow); color: var(--navy); border-color: var(--navy); }
+
+/* A match in another window: the steps to connect it, then what the app sees of it. */
+.match-window h3 { margin-bottom: 8px; }
+.window-steps { margin: 0 0 10px; padding-left: 20px; }
+.window-steps li { margin-bottom: 6px; }
+.window-view { background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
+.window-view.found { box-shadow: 0 0 0 2px var(--card-yellow); }
+.window-preview { display: block; width: 100%; height: auto; }
+.chip-state { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.875rem; font-weight: 600; }
+.chip-state.playing { background: var(--ok); color: var(--paper); }
+.chip-state.paused { background: var(--card-yellow); color: var(--navy); }
+.mark-area { position: relative; cursor: crosshair; touch-action: none; user-select: none; border-radius: 6px; overflow: hidden; margin: 8px 0; }
+.mark-view { display: block; width: 100%; height: auto; }
+.mark-box { position: absolute; border: 2px solid var(--card-yellow); background: rgba(245, 197, 24, 0.18); pointer-events: none; }
+
+/* The frames of the last seconds, to pick the clearest. */
+.filmstrip:empty { display: none; }
+.filmstrip { margin-bottom: 12px; }
+.filmstrip p { margin-bottom: 6px; }
+.frame-choices { position: relative; display: flex; gap: 6px; overflow-x: auto; padding: 4px 2px 8px; scrollbar-width: thin; }
+.frame-choice {
+  flex: none; width: 112px; display: flex; flex-direction: column; gap: 3px; padding: 3px; cursor: pointer;
+  background: var(--navy-2); color: var(--chalk); border: 2px solid var(--navy-3); border-radius: 6px; font-size: 0.75rem;
+}
+.frame-choice img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 3px; background: #000; }
+.frame-choice[aria-pressed="true"] { border-color: var(--card-yellow); box-shadow: 0 0 0 2px var(--card-yellow); color: var(--paper); font-weight: 700; }
+
+/* ── One-click pictures: the marks beside the app's own YouTube player ──
+   Room above and below the video for the two marks. Their size, colours and position are what
+   js/watch/find-video.js looks for in a shared picture of the screen: change both together. */
 .capture-frame { position: relative; margin: 10px 0; }
 .capture-mark { display: none; position: absolute; width: 16px; height: 8px; }
 .capture-frame.is-capturing .capture-mark { display: block; }
@@ -567,7 +608,20 @@ dialog form, dialog .dialog-body { display: flex; flex-direction: column; max-he
 
 /* ── 9. Narrow screens ────────────────────────────────────── */
 @media (max-width: 1000px) {
-  .watch, .workspace { grid-template-columns: minmax(0, 1fr); }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  /* One column: the match first, then the moment, then the list. A video playing in the app
+     stays at the top of the window, smaller, so it is still in view while you draw. */
+  .desk { display: flex; flex-direction: column; gap: 12px; }
+  .desk-watch { display: contents; }
+  .desk-viewer { order: 1; }
+  .desk-work { order: 2; }
+  .desk-moments { order: 3; }
+  .desk-split { display: none; }
+  .desk-viewer.plays-here { position: sticky; top: 0; z-index: 4; box-shadow: 0 6px 18px rgba(22, 38, 63, 0.35); }
+  .desk-viewer.plays-here .viewer video, .desk-viewer.plays-here .viewer iframe { max-height: 30vh; }
+  /* Whatever the page scrolls to (a box you tab to, a drawing) stays clear of the video above it. */
+  html:has(.desk-viewer.plays-here) { scroll-padding-top: calc(30vh + 130px); }
+  .desk-viewer.plays-here .watch-explain, .desk-viewer.plays-here .keys { display: none; }
 }
 @media (max-width: 720px) {
   .bar { flex-direction: column; gap: 0; padding: 0 12px; }

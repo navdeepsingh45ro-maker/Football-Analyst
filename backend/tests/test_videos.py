@@ -108,8 +108,11 @@ def test_web_videos_are_described_honestly(client):
 
     link = _add_video(client, match["id"], location="https://example.com/watch/full-match").json()
     assert link["kind"] == "external_link"
-    assert link["playback"]["mode"] == "none"
-    assert "only a link" in link["playback"]["explanation"]
+    assert link["playback"]["mode"] == "window"  # watched in its own window; the picture comes from sharing it
+    assert link["playback"]["source_url"] == "https://example.com/watch/full-match"
+    assert link["playback"]["can_read_time"] is False
+    assert link["playback"]["can_capture_frames"] == "depends"
+    assert "window of its own" in link["playback"]["explanation"]
 
 
 @pytest.mark.parametrize("payload", [

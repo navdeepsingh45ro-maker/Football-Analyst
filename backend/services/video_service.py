@@ -17,10 +17,13 @@ says so in plain words. The four kinds:
     youtube        shown inside YouTube's own embedded player. The app can pause it and
                    read its time through the player's own messages, but cannot read
                    its pixels, and YouTube's terms do not allow drawing over it.
-                   The picture comes from a screenshot you paste, or a still the
-                   browser shares with your permission.
+                   The picture comes from a screenshot you paste, or from a picture
+                   of this window that the browser shares with your permission.
 
-    external_link  any other web page. Just a link to open in a new tab.
+    external_link  any other web page, such as a match on a broadcaster's site. It is
+                   watched in a window of its own beside the app. With your permission
+                   the browser shares that window with the app, which takes the picture
+                   from it when you press Analyse. The app cannot read its time.
 
 Nothing here downloads, converts or unlocks video. Protected streams stay protected.
 """
@@ -102,12 +105,12 @@ def describe_playback(video: VideoReference) -> dict:
         if not path.is_file():
             return _playback("none", None, False, False, "no",
                              "The file is not at this path right now. If it is on an external drive, connect it "
-                             "and reload. You can still record observations with the manual workspace.")
+                             "and reload. You can still record observations: type the timestamp and add a screenshot.")
         if path.suffix.lower() not in config.VIDEO_EXTENSIONS:
             return _playback("none", None, True, False, "no",
                              f"Browsers cannot play {path.suffix or 'this type of'} files. Convert it to .mp4 "
-                             "(H.264 video) and point this reference at the new file. Until then, use the manual "
-                             "workspace: type the timestamp and add a screenshot.")
+                             "(H.264 video) and point this reference at the new file. Until then, play it in another "
+                             "app and watch it in that window, or type the timestamp and add a screenshot.")
         return _playback("html5", f"/api/videos/{video.id}/stream", True, True, "yes",
                          "Plays in the app. Pause anywhere, press Analyse, and the exact time and frame are captured.")
     if video.kind == "direct_url":
@@ -119,11 +122,12 @@ def describe_playback(video: VideoReference) -> dict:
         video_id = youtube_video_id(video.location)
         return _playback("embed", f"https://www.youtube-nocookie.com/embed/{video_id}", True, True, "depends",
                          "Plays in YouTube's own player. Press Analyse this moment and the app pauses it and reads "
-                         "the time. A page may not copy the picture out of YouTube's player, so add it by pasting a "
-                         "screenshot, or turn on one-click pictures and let the browser share a still of this page.")
-    return _playback("none", video.location, True, False, "no",
-                     "This is only a link, not a video the app can play. Open it in a new tab, then use the manual "
-                     "workspace: type the timestamp and add a screenshot.")
+                         "the time. A page may not copy the picture out of YouTube's player, so turn on one-click "
+                         "pictures (the browser shares this window with the app) or paste a screenshot.")
+    return _playback("window", video.location, True, False, "depends",
+                     "Plays on its own website, in a window of its own beside the app. Connect that window and "
+                     "Analyse this moment takes the picture from it, even after you pause it there. The app cannot "
+                     "read that player's time, so type it if you want it. Protected streams show as black.")
 
 
 def _playback(mode: str, source_url: str | None, available: bool, can_read_time: bool,
